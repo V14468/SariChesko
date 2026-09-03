@@ -1,13 +1,63 @@
 import sys
-import time
+import math
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QPainterPath
+from PySide6.QtCore import Qt
 
 from .storage.db import get_connection, init_db
 from .ui.main_window import MainWindow
-from .ui.splash import SplashScreen
 from .ui.theme import OLED_BLACK_THEME
+
+
+def _create_app_icon() -> QIcon:
+    """Generate a cyan hexagonal network icon for the window/taskbar."""
+    size = 64
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    cx, cy = size / 2, size / 2
+    r = 28
+
+    # Hex shape
+    pts = []
+    for i in range(6):
+        angle = math.radians(60 * i - 30)
+        pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
+
+    path = QPainterPath()
+    path.moveTo(*pts[0])
+    for pt in pts[1:]:
+        path.lineTo(*pt)
+    path.closeSubpath()
+
+    p.setPen(QPen(QColor(0, 240, 255), 2.0))
+    p.setBrush(QColor(0, 240, 255, 40))
+    p.drawPath(path)
+
+    # Center dot
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(0, 240, 255))
+    p.drawEllipse(cx - 5, cy - 5, 10, 10)
+
+    # Inner connections
+    inner_r = 12
+    p.setPen(QPen(QColor(0, 240, 255, 120), 1.0))
+    for i in range(6):
+        angle = math.radians(60 * i - 30)
+        ix = cx + inner_r * math.cos(angle)
+        iy = cy + inner_r * math.sin(angle)
+        p.drawLine(int(cx), int(cy), int(ix), int(iy))
+        p.setBrush(QColor(0, 240, 255))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(ix - 2, iy - 2, 4, 4)
+        p.setPen(QPen(QColor(0, 240, 255, 120), 1.0))
+
+    p.end()
+    return QIcon(pixmap)
 
 
 def main():
@@ -15,38 +65,15 @@ def main():
     app.setApplicationName("SariChesko")
     app.setStyleSheet(OLED_BLACK_THEME)
 
-    # Show Splash Screen first
-    splash = SplashScreen()
-    splash.show()
-    splash.start_animation()
-    app.processEvents()
+    icon = _create_app_icon()
+    app.setWindowIcon(icon)
 
-    # Step 1: Database init
-    splash.update_status("Initializing SQLite database...", 30)
-    app.processEvents()
-    time.sleep(0.3)
     conn = get_connection()
     init_db(conn)
     conn.close()
 
-    # Step 2: Core Platform Layer check
-    splash.update_status("Detecting Platform Abstraction Layer...", 65)
-    app.processEvents()
-    time.sleep(0.3)
-
-    # Step 3: UI Main Window construction
-    splash.update_status("Loading UI components...", 90)
-    app.processEvents()
-    time.sleep(0.3)
-
     window = MainWindow()
-
-    splash.update_status("Ready!", 100)
-    app.processEvents()
-    time.sleep(0.2)
-
-    # Transition from Splash to Main Window
-    splash.close()
+    window.setWindowIcon(icon)
     window.show()
 
     sys.exit(app.exec())

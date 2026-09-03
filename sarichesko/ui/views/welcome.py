@@ -1,139 +1,216 @@
 import math
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame,
+    QWidget, QVBoxLayout, QLabel,
     QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QPainter, QColor, QPen, QRadialGradient, QBrush, QFont
+from PySide6.QtGui import QPainter, QColor, QPen, QRadialGradient, QBrush, QFont, QPainterPath
 
 
 class AnimatedLogoWidget(QWidget):
-    """Custom vector-drawn pulsing network logo with glowing radar/signal waves."""
+    """Hexagonal mesh network logo with data-flow pulses and integrated 'SARICHESKO' text."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(260, 260)
+        self.setFixedSize(320, 320)
         self._phase = 0.0
 
-        # 60 FPS animation timer
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._update_animation)
+        self._timer.timeout.connect(self._tick)
         self._timer.start(16)
 
-    def _update_animation(self):
-        self._phase = (self._phase + 0.025) % (2 * math.pi)
+    def _tick(self):
+        self._phase = (self._phase + 0.018) % (2 * math.pi)
         self.update()
 
+    def _hex_points(self, cx, cy, r):
+        pts = []
+        for i in range(6):
+            angle = math.radians(60 * i - 30)
+            pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
+        return pts
+
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         cx, cy = self.width() / 2, self.height() / 2
 
-        # Glowing outer pulse rings
-        for i in range(4):
-            ring_phase = (self._phase + i * 0.9) % (2 * math.pi)
-            radius = 45 + (ring_phase / (2 * math.pi)) * 75
-            alpha = int(255 * (1.0 - (radius - 45) / 75))
-            alpha = max(0, min(255, alpha))
+        # ── Outer hex border (faint) ──
+        outer_pts = self._hex_points(cx, cy, 140)
+        path_outer = QPainterPath()
+        path_outer.moveTo(*outer_pts[0])
+        for pt in outer_pts[1:]:
+            path_outer.lineTo(*pt)
+        path_outer.closeSubpath()
+        p.setPen(QPen(QColor(0, 240, 255, 20), 1.0))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(path_outer)
 
-            pen = QPen(QColor(0, 240, 255, alpha), 1.8)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(cx - radius, cy - radius, radius * 2, radius * 2)
+        # ── Middle hex ring ──
+        mid_pts = self._hex_points(cx, cy, 100)
+        path_mid = QPainterPath()
+        path_mid.moveTo(*mid_pts[0])
+        for pt in mid_pts[1:]:
+            path_mid.lineTo(*pt)
+        path_mid.closeSubpath()
+        p.setPen(QPen(QColor(0, 240, 255, 50), 1.2))
+        p.drawPath(path_mid)
 
-        # Core glowing orb gradient
-        pulse_scale = 1.0 + 0.08 * math.sin(self._phase * 2)
-        core_radius = 40 * pulse_scale
+        # ── Inner hex ring (brighter) ──
+        inner_pts = self._hex_points(cx, cy, 58)
+        path_inner = QPainterPath()
+        path_inner.moveTo(*inner_pts[0])
+        for pt in inner_pts[1:]:
+            path_inner.lineTo(*pt)
+        path_inner.closeSubpath()
+        p.setPen(QPen(QColor(0, 240, 255, 90), 1.5))
+        p.drawPath(path_inner)
 
-        grad = QRadialGradient(cx, cy, core_radius * 1.5)
-        grad.setColorAt(0.0, QColor(0, 240, 255, 240))
-        grad.setColorAt(0.5, QColor(0, 229, 163, 160))
+        # ── Cross-connections: inner hex vertices to mid hex vertices ──
+        for i in range(6):
+            alpha = int(30 + 25 * math.sin(self._phase * 2 + i))
+            p.setPen(QPen(QColor(0, 240, 255, alpha), 0.6))
+            p.drawLine(int(inner_pts[i][0]), int(inner_pts[i][1]),
+                       int(mid_pts[i][0]), int(mid_pts[i][1]))
+            p.drawLine(int(mid_pts[i][0]), int(mid_pts[i][1]),
+                       int(outer_pts[i][0]), int(outer_pts[i][1]))
+
+        # ── Data pulse particles traveling along edges ──
+        for i in range(6):
+            t = (self._phase * 1.5 + i * 1.047) % (2 * math.pi)
+            progress = (t / (2 * math.pi))
+
+            # Pulse on mid-hex edges
+            x0, y0 = mid_pts[i]
+            x1, y1 = mid_pts[(i + 1) % 6]
+            px = x0 + (x1 - x0) * progress
+            py = y0 + (y1 - y0) * progress
+
+            pulse_grad = QRadialGradient(px, py, 10)
+            pulse_grad.setColorAt(0.0, QColor(0, 240, 255, 200))
+            pulse_grad.setColorAt(1.0, QColor(0, 240, 255, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(pulse_grad))
+            p.drawEllipse(px - 10, py - 10, 20, 20)
+
+            p.setBrush(QBrush(QColor(0, 240, 255, 255)))
+            p.drawEllipse(px - 3, py - 3, 6, 6)
+
+        # ── Vertex nodes on mid hex (junction dots) ──
+        for i, (mx, my) in enumerate(mid_pts):
+            glow = int(60 + 40 * math.sin(self._phase * 3 + i * 0.8))
+            node_grad = QRadialGradient(mx, my, 9)
+            node_grad.setColorAt(0.0, QColor(0, 240, 255, 180))
+            node_grad.setColorAt(1.0, QColor(0, 240, 255, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(node_grad))
+            p.drawEllipse(mx - 9, my - 9, 18, 18)
+
+            p.setBrush(QBrush(QColor(0, 240, 255)))
+            p.drawEllipse(mx - 4, my - 4, 8, 8)
+
+        # ── Core glow ──
+        pulse = 1.0 + 0.05 * math.sin(self._phase * 2.5)
+        cr = 30 * pulse
+
+        grad = QRadialGradient(cx, cy, cr * 1.8)
+        grad.setColorAt(0.0, QColor(0, 240, 255, 200))
+        grad.setColorAt(0.4, QColor(0, 200, 220, 80))
         grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(cx - cr * 1.8, cy - cr * 1.8, cr * 3.6, cr * 3.6)
 
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(grad))
-        painter.drawEllipse(cx - core_radius * 1.5, cy - core_radius * 1.5, core_radius * 3, core_radius * 3)
+        # ── Center core node ──
+        p.setBrush(QBrush(QColor(0, 240, 255)))
+        p.drawEllipse(cx - 10, cy - 10, 20, 20)
 
-        # Center core solid node
-        painter.setBrush(QBrush(QColor(0, 240, 255)))
-        painter.drawEllipse(cx - 14, cy - 14, 28, 28)
+        # ── "SARICHESKO" text arc across the center ──
+        text = "SARICHESKO"
+        font = QFont("Segoe UI", 11, QFont.Weight.Bold)
+        p.setFont(font)
 
-        # Orbiting node dots (network traffic indicator)
-        for j in range(4):
-            angle = self._phase * 1.3 + (j * math.pi / 2)
-            orb_r = 78
-            ox = cx + orb_r * math.cos(angle)
-            oy = cy + orb_r * math.sin(angle)
+        arc_radius = 78
+        total_arc = 100  # degrees
+        start_angle = 270 - total_arc / 2
 
-            painter.setBrush(QBrush(QColor(0, 240, 255 if j % 2 == 0 else 0, 229, 163)))
-            painter.drawEllipse(ox - 6, oy - 6, 12, 12)
+        for i, ch in enumerate(text):
+            angle_deg = start_angle + (i / (len(text) - 1)) * total_arc
+            angle_rad = math.radians(angle_deg)
+            tx = cx + arc_radius * math.cos(angle_rad)
+            ty = cy + arc_radius * math.sin(angle_rad)
+
+            # Shimmer effect
+            shimmer = math.sin(self._phase * 3 + i * 0.5)
+            alpha = int(180 + 75 * shimmer)
+            p.setPen(QColor(0, 240, 255, alpha))
+
+            p.save()
+            p.translate(tx, ty)
+            p.rotate(angle_deg + 90)
+            p.drawText(-5, 4, ch)
+            p.restore()
 
 
 class WelcomeView(QWidget):
-    """Initial central opening screen with centered animated logo & tagline."""
+    """Opening screen with animated logo and tagline."""
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setContentsMargins(40, 20, 40, 40)
 
-        # Centered container
         container = QWidget()
         c_layout = QVBoxLayout(container)
         c_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        c_layout.setSpacing(16)
+        c_layout.setSpacing(12)
 
-        # 1. Animated Logo
         self.logo_widget = AnimatedLogoWidget()
         c_layout.addWidget(self.logo_widget, 0, Qt.AlignmentFlag.AlignCenter)
 
-        c_layout.addSpacing(12)
+        c_layout.addSpacing(8)
 
-        # 2. Main Centered Title
         title = QLabel("SariChesko")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("""
-            font-size: 52px;
+            font-size: 48px;
             font-weight: 800;
             color: #00f0ff;
             letter-spacing: 3px;
         """)
         c_layout.addWidget(title)
 
-        # 3. Clean Taglines (No "Telugu:")
-        tagline_1 = QLabel("SariChesko  •  Sort It Out")
+        tagline_1 = QLabel("Sort It Out")
         tagline_1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline_1.setStyleSheet("""
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 700;
             color: #ffffff;
-            letter-spacing: 1.5px;
+            letter-spacing: 2px;
         """)
 
         tagline_2 = QLabel("Adaptive Network Congestion & ISP Diagnostic Engine")
         tagline_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline_2.setStyleSheet("""
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            color: #94a3b8;
+            color: #64748b;
             letter-spacing: 0.5px;
         """)
 
         c_layout.addWidget(tagline_1)
         c_layout.addWidget(tagline_2)
-
         c_layout.addSpacing(28)
 
-        # Prompt hint
-        hint = QLabel("Select any module from the sidebar to begin")
+        hint = QLabel("Select a module from the sidebar to begin")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("""
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            color: #64748b;
+            color: #475569;
             letter-spacing: 1px;
-            background-color: #080a12;
-            border: 1px solid #161a2e;
+            background-color: #060810;
+            border: 1px solid #141824;
             border-radius: 20px;
             padding: 10px 28px;
         """)
@@ -141,7 +218,6 @@ class WelcomeView(QWidget):
 
         layout.addWidget(container)
 
-        # Smooth fade in
         self._opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity)
         self._anim = QPropertyAnimation(self._opacity, b"opacity")

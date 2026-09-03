@@ -1,95 +1,259 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QGridLayout, QScrollArea,
 )
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+
+
+def _card(title: str, value: str, unit: str, color: str, footnote: str) -> QFrame:
+    """Reusable metric card widget."""
+    card = QFrame()
+    card.setObjectName("card")
+    card.setMinimumHeight(110)
+    layout = QVBoxLayout(card)
+    layout.setContentsMargins(20, 16, 20, 16)
+    layout.setSpacing(6)
+
+    lbl_title = QLabel(title)
+    lbl_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+
+    val_row = QHBoxLayout()
+    val_row.setSpacing(4)
+    val_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBaseline)
+
+    lbl_val = QLabel(value)
+    lbl_val.setStyleSheet(f"font-size: 28px; font-weight: 800; color: {color};")
+
+    lbl_unit = QLabel(unit)
+    lbl_unit.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {color}; padding-top: 8px;")
+
+    val_row.addWidget(lbl_val)
+    val_row.addWidget(lbl_unit)
+
+    lbl_foot = QLabel(footnote)
+    lbl_foot.setStyleSheet("font-size: 11px; color: #475569;")
+
+    layout.addWidget(lbl_title)
+    layout.addLayout(val_row)
+    layout.addWidget(lbl_foot)
+    return card
+
+
+def _status_row(label: str, status: str, color: str) -> QHBoxLayout:
+    """Single status indicator row."""
+    row = QHBoxLayout()
+    row.setSpacing(10)
+
+    dot = QLabel("●")
+    dot.setStyleSheet(f"font-size: 10px; color: {color}; padding: 0;")
+    dot.setFixedWidth(14)
+
+    lbl = QLabel(label)
+    lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #e2e8f0;")
+
+    val = QLabel(status)
+    val.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {color};")
+    val.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+    row.addWidget(dot)
+    row.addWidget(lbl)
+    row.addStretch()
+    row.addWidget(val)
+    return row
 
 
 class DashboardView(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(24)
 
-        # Hero Header Box
-        hero_box = QWidget()
-        hero_layout = QVBoxLayout(hero_box)
-        hero_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
 
-        title = QLabel("SariChesko")
-        title.setObjectName("hero_title")
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(20)
 
-        tagline = QLabel("Telugu: \"Sort it out\"  •  Adaptive Network Congestion & ISP Diagnostic Engine")
-        tagline.setObjectName("hero_subtitle")
+        # ── Header ──
+        header = QHBoxLayout()
+        header.setSpacing(12)
 
-        hero_layout.addWidget(title)
-        hero_layout.addWidget(tagline)
-        layout.addWidget(hero_box)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
 
-        # Quick Status Cards Row
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(16)
+        title = QLabel("Dashboard")
+        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px;")
 
-        cards_data = [
-            ("Network Status", "Monitoring Active", "#00e5a3", "Real-time interface telemetry listening"),
-            ("ISP Diagnostics", "Gateway Reachable", "#00f0ff", "Level 1-5 multi-target probe ready"),
-            ("Congestion Engine", "Zero Active Dropping", "#94a3b8", "Leaky / Token Bucket & RED / CoDel Idle"),
+        subtitle = QLabel("Real-time network health overview")
+        subtitle.setStyleSheet("font-size: 13px; font-weight: 500; color: #64748b;")
+
+        title_col.addWidget(title)
+        title_col.addWidget(subtitle)
+
+        header.addLayout(title_col)
+        header.addStretch()
+
+        btn_diag = QPushButton("Run Diagnostic")
+        btn_diag.setObjectName("primary_btn")
+        btn_diag.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_diag.setFixedHeight(38)
+        header.addWidget(btn_diag)
+
+        layout.addLayout(header)
+
+        # ── Metric Cards Row ──
+        cards_grid = QGridLayout()
+        cards_grid.setSpacing(14)
+
+        cards_grid.addWidget(
+            _card("LATENCY", "—", "ms", "#00f0ff", "Baseline not established"),
+            0, 0
+        )
+        cards_grid.addWidget(
+            _card("PACKET LOSS", "—", "%", "#00e5a3", "Waiting for measurement"),
+            0, 1
+        )
+        cards_grid.addWidget(
+            _card("BANDWIDTH", "—", "Mbps", "#a78bfa", "No active session"),
+            0, 2
+        )
+        cards_grid.addWidget(
+            _card("JITTER", "—", "ms", "#f59e0b", "Waiting for measurement"),
+            0, 3
+        )
+
+        layout.addLayout(cards_grid)
+
+        # ── Two-Column: System Status + Congestion Score ──
+        two_col = QHBoxLayout()
+        two_col.setSpacing(14)
+
+        # Left: System Status Panel
+        status_card = QFrame()
+        status_card.setObjectName("card")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(20, 18, 20, 18)
+        status_layout.setSpacing(14)
+
+        status_title = QLabel("SYSTEM STATUS")
+        status_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        status_layout.addWidget(status_title)
+
+        statuses = [
+            ("Monitor Engine", "Idle", "#64748b"),
+            ("ISP Probe", "Ready", "#00e5a3"),
+            ("Congestion Scorer", "Idle", "#64748b"),
+            ("Traffic Controller", "Inactive", "#64748b"),
+            ("Database", "Connected", "#00e5a3"),
         ]
+        for lbl, val, col in statuses:
+            status_layout.addLayout(_status_row(lbl, val, col))
 
-        for card_title, status_val, color, desc in cards_data:
-            card = QFrame()
-            card.setObjectName("card")
-            c_layout = QVBoxLayout(card)
-            c_layout.setSpacing(8)
+        two_col.addWidget(status_card, 1)
 
-            lbl_t = QLabel(card_title)
-            lbl_t.setStyleSheet("font-size: 12px; font-weight: 600; color: #64748b;")
+        # Right: Congestion Score Panel
+        score_card = QFrame()
+        score_card.setObjectName("card")
+        score_layout = QVBoxLayout(score_card)
+        score_layout.setContentsMargins(20, 18, 20, 18)
+        score_layout.setSpacing(10)
 
-            lbl_v = QLabel(status_val)
-            lbl_v.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {color};")
+        score_title = QLabel("CONGESTION SCORE")
+        score_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        score_layout.addWidget(score_title)
 
-            lbl_d = QLabel(desc)
-            lbl_d.setStyleSheet("font-size: 12px; color: #94a3b8;")
-            lbl_d.setWordWrap(True)
+        score_val = QLabel("—")
+        score_val.setStyleSheet("font-size: 56px; font-weight: 800; color: #64748b;")
+        score_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        score_layout.addWidget(score_val)
 
-            c_layout.addWidget(lbl_t)
-            c_layout.addWidget(lbl_v)
-            c_layout.addWidget(lbl_d)
-            cards_row.addWidget(card)
+        score_label = QLabel("No data yet")
+        score_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #475569;")
+        score_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        score_layout.addWidget(score_label)
 
-        layout.addLayout(cards_row)
+        score_hint = QLabel("Start a monitoring session to generate\na real-time congestion score (0–100)")
+        score_hint.setStyleSheet("font-size: 11px; color: #334155;")
+        score_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        score_layout.addWidget(score_hint)
+        score_layout.addStretch()
 
-        # CTA Section
-        cta_frame = QFrame()
-        cta_frame.setObjectName("card")
-        cta_layout = QHBoxLayout(cta_frame)
-        cta_layout.setContentsMargins(24, 24, 24, 24)
+        two_col.addWidget(score_card, 1)
 
-        info_v = QVBoxLayout()
-        t_cta = QLabel("Run Network Diagnostic")
-        t_cta.setStyleSheet("font-size: 16px; font-weight: 700; color: #ffffff;")
-        d_cta = QLabel("Measure latency variance, packet loss, and classify local vs. ISP bottlenecks.")
-        d_cta.setStyleSheet("font-size: 13px; color: #94a3b8;")
-        info_v.addWidget(t_cta)
-        info_v.addWidget(d_cta)
+        layout.addLayout(two_col)
 
-        btn_run = QPushButton("Start Diagnostic")
-        btn_run.setObjectName("primary_btn")
-        btn_run.setCursor(Qt.CursorShape.PointingHandCursor)
+        # ── ISP & Algorithm Status Row ──
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(14)
 
-        cta_layout.addLayout(info_v)
-        cta_layout.addStretch()
-        cta_layout.addWidget(btn_run)
+        # ISP Health
+        isp_card = QFrame()
+        isp_card.setObjectName("card")
+        isp_layout = QVBoxLayout(isp_card)
+        isp_layout.setContentsMargins(20, 18, 20, 18)
+        isp_layout.setSpacing(10)
 
-        layout.addWidget(cta_frame)
+        isp_title = QLabel("ISP HEALTH")
+        isp_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        isp_layout.addWidget(isp_title)
+
+        isp_probes = [
+            ("Gateway", "Not tested", "#475569"),
+            ("ISP First Hop", "Not tested", "#475569"),
+            ("WAN (8.8.8.8)", "Not tested", "#475569"),
+            ("DNS Resolution", "Not tested", "#475569"),
+        ]
+        for lbl, val, col in isp_probes:
+            isp_layout.addLayout(_status_row(lbl, val, col))
+
+        isp_layout.addStretch()
+        bottom_row.addWidget(isp_card, 1)
+
+        # Active Algorithm
+        algo_card = QFrame()
+        algo_card.setObjectName("card")
+        algo_layout = QVBoxLayout(algo_card)
+        algo_layout.setContentsMargins(20, 18, 20, 18)
+        algo_layout.setSpacing(10)
+
+        algo_title = QLabel("ACTIVE ALGORITHM")
+        algo_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        algo_layout.addWidget(algo_title)
+
+        algo_none = QLabel("None Applied")
+        algo_none.setStyleSheet("font-size: 22px; font-weight: 700; color: #334155;")
+        algo_none.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        algo_layout.addWidget(algo_none)
+
+        algo_hint = QLabel("Run a diagnostic to receive an\nalgorithm recommendation")
+        algo_hint.setStyleSheet("font-size: 12px; color: #475569;")
+        algo_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        algo_layout.addWidget(algo_hint)
+
+        algos_available = QLabel("Available: Leaky Bucket · Token Bucket · RED · CoDel")
+        algos_available.setStyleSheet("font-size: 10px; color: #334155; letter-spacing: 0.3px;")
+        algos_available.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        algo_layout.addWidget(algos_available)
+        algo_layout.addStretch()
+
+        bottom_row.addWidget(algo_card, 1)
+
+        layout.addLayout(bottom_row)
         layout.addStretch()
 
-        # Fade-in animation on opening view
+        scroll.setWidget(content)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        # Fade in
         self._opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity)
         self._anim = QPropertyAnimation(self._opacity, b"opacity")
-        self._anim.setDuration(450)
+        self._anim.setDuration(350)
         self._anim.setStartValue(0.0)
         self._anim.setEndValue(1.0)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
