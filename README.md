@@ -8,7 +8,7 @@
 [![Simulation](https://img.shields.io/badge/Simulation-ns--3%20%7C%20Python%20DES-orange.svg?style=flat-square)](https://www.nsnam.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-An open-source, cross-platform research and desktop utility engineered for **real-time network congestion detection, multi-hop fault attribution, and automated traffic mitigation**. Developed as an academic Computer Networks Project-Based Learning (PBL) initiative, SariChesko bridges empirical transport-layer telemetry with classical traffic shaping and Active Queue Management (AQM) algorithms.
+An open-source, cross-platform systems utility and network instrumentation testbed engineered for **real-time network congestion detection, multi-hop fault attribution, and automated traffic mitigation**. SariChesko bridges empirical transport-layer telemetry with classical traffic shaping and Active Queue Management (AQM) algorithms to provide observable, deterministic endpoint quality-of-service.
 
 ---
 
@@ -23,6 +23,7 @@ Network degradation frequently suffers from ambiguous fault localization: end us
 4. **Human-in-the-Loop Safe Actuation:** Executes operating-system-level traffic control (via Linux `iproute2`/`tc` or Windows QoS/WTC) exclusively upon explicit user authorization.
 5. **Empirical Verification & Automatic Rollback:** Measures post-intervention link performance against pre-intervention state, offering deterministic one-click rollback if link quality fails to improve.
 
+```mermaid
 flowchart LR
     A[Monitor Telemetry] --> B[Detect Congestion]
     B --> C[Attribution Probing]
@@ -33,13 +34,13 @@ flowchart LR
     G --> H{Verify Metric Gain}
     H -- Improved --> I[Persist Configuration]
     H -- Stagnant / Degraded --> J[Rollback Snapshot]
-
+```
 
 ---
 
 ## Dual Operational Paradigms
 
-To support both live system management and safe academic exploration, SariChesko provides two decoupled operational modes:
+To support both live system management and reproducible empirical experimentation, SariChesko provides two decoupled operational modes:
 
 ### Paradigm A: Live Production Network Telemetry
 * **Interface Auto-Discovery:** Enumerates network interfaces via platform-native socket APIs and `psutil`.
