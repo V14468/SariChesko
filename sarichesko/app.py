@@ -1,5 +1,6 @@
 import sys
 import math
+import ctypes
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QIcon, QPainterPath
@@ -11,7 +12,6 @@ from .ui.theme import OLED_BLACK_THEME
 
 
 def _create_app_icon() -> QIcon:
-    """Generate a cyan hexagonal network icon for the window/taskbar."""
     size = 64
     pixmap = QPixmap(size, size)
     pixmap.fill(QColor(0, 0, 0, 0))
@@ -22,7 +22,6 @@ def _create_app_icon() -> QIcon:
     cx, cy = size / 2, size / 2
     r = 28
 
-    # Hex shape
     pts = []
     for i in range(6):
         angle = math.radians(60 * i - 30)
@@ -38,12 +37,10 @@ def _create_app_icon() -> QIcon:
     p.setBrush(QColor(0, 240, 255, 40))
     p.drawPath(path)
 
-    # Center dot
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(0, 240, 255))
     p.drawEllipse(cx - 5, cy - 5, 10, 10)
 
-    # Inner connections
     inner_r = 12
     p.setPen(QPen(QColor(0, 240, 255, 120), 1.0))
     for i in range(6):
@@ -60,6 +57,20 @@ def _create_app_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+def _set_dark_title_bar(window):
+    """Force dark title bar on Windows 10/11."""
+    try:
+        hwnd = int(window.winId())
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        value = ctypes.c_int(1)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(value), ctypes.sizeof(value)
+        )
+    except Exception:
+        pass
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("SariChesko")
@@ -74,6 +85,7 @@ def main():
 
     window = MainWindow()
     window.setWindowIcon(icon)
+    _set_dark_title_bar(window)
     window.show()
 
     sys.exit(app.exec())

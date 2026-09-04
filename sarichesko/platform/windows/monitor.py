@@ -91,16 +91,38 @@ class WindowsNetworkMonitor(NetworkMonitorBase):
         return hops
 
     def get_default_gateway(self) -> Optional[str]:
-        gateways = psutil.net_if_stats()
+        # Method 1: Use psutil's net_if_addrs + WMI-style approach isn't available,
+        # so parse ipconfig with broader matching
         try:
             out = subprocess.run(
                 ["ipconfig"], capture_output=True, text=True, timeout=10,
             )
-            match = re.search(r"Default Gateway[\s.]*:\s*([\d.]+)", out.stdout)
-            if match:
-                return match.group(1)
+                # Match various ipconfig gateway formats across locales
+            for line in out.stdout.splitlines():
+                line_stripped = line.strip()
+                    # English: "Default Gateway . . . : 192.168.x.x"
+                    # Also handles lines that just have an IP after the gateway label
+                if "gateway" in line_stripped.lower() or "puerta" in line_stripped.lower() or "gateway" in line_stripped.lower():
+                    match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", line_stripped)
+                    if match:
+                        return match.group(1)
         except Exception:
             pass
+
+            # Method 2: Use 'route print' as fallback
+        try:
+            out = subprocess.run(
+                ["route", "print", "0.0.0.0"], capture_output=True, text=True, timeout=10,
+            )
+            for line in out.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[0] == "0.0.0.0":
+                    gw = parts[2]
+                    if re.match(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", gw):
+                        return gw
+        except Exception:
+            pass
+
         return None
 
     def get_dns_servers(self) -> list[str]:
