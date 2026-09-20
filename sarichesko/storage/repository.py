@@ -121,6 +121,21 @@ class Repository:
             "SELECT * FROM simulation_results ORDER BY timestamp DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+    
+    def get_latest_simulation_result(self, scenario: str, algorithm: str) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT * FROM simulation_results WHERE scenario=? AND algorithm=? "
+            "ORDER BY timestamp DESC LIMIT 1",
+            (scenario, algorithm)
+        ).fetchone()
+        return dict(row) if row else None
+
+    # --- Applied Policies (read) ---
+    def get_applied_policies(self, limit: int = 50) -> list:
+        rows = self._conn.execute(
+            "SELECT * FROM applied_policies ORDER BY timestamp DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     # --- Settings ---
     def get_setting(self, key: str, default: str = "") -> str:
@@ -130,3 +145,8 @@ class Repository:
     def set_setting(self, key: str, value: str) -> None:
         self._conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
         self._conn.commit()
+
+    # --- Sessions (read) ---
+    def get_session_interface(self, session_id: str) -> Optional[str]:
+        row = self._conn.execute("SELECT interface FROM sessions WHERE id=?", (session_id,)).fetchone()
+        return row["interface"] if row else None
