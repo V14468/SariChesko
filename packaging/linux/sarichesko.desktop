@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SariChesko
+Comment=Cross-platform desktop network congestion diagnosis and traffic mitigation testbed
+Exec=sarichesko
+Icon=sarichesko
+Terminal=false
+Categories=Network;
+StartupNotify=true

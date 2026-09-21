@@ -79,8 +79,6 @@ a = Analysis(
         'PyQt5',
         'PyQt6',
     ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
     noarchive=False,
 )
 
