@@ -29,6 +29,7 @@ class MonitorEngine(QThread):
         self._history: list[Measurement] = []
         self._baseline: Optional[Baseline] = None
         self._baseline_window = 60
+        self._iface_speed_mbps: Optional[float] = None
 
     @property
     def baseline(self) -> Optional[Baseline]:
@@ -44,6 +45,17 @@ class MonitorEngine(QThread):
 
     def run(self) -> None:
         self._running = True
+
+        # Fetch interface speed for utilization calculation
+        try:
+            interfaces = self._monitor.get_interfaces()
+            for iface_info in interfaces:
+                if iface_info.name == self._iface and iface_info.speed_mbps:
+                    self._iface_speed_mbps = float(iface_info.speed_mbps)
+                    break
+        except Exception:
+            pass
+
         self._prev_stats = self._monitor.get_stats(self._iface)
         time.sleep(self._interval)
 
@@ -59,7 +71,11 @@ class MonitorEngine(QThread):
                 self._history.append(m)
                 self.measurement_ready.emit(m)
 
+                # Refresh baseline periodically (every 5 minutes = 300 samples at 1s interval)
+                refresh_interval = 300
                 if self._baseline is None and len(self._history) >= self._baseline_window:
+                    self._compute_baseline()
+                elif self._baseline is not None and len(self._history) % refresh_interval == 0:
                     self._compute_baseline()
 
                 if self._baseline is not None:
@@ -89,22 +105,35 @@ class MonitorEngine(QThread):
         loss_pct = (drops / packets_total * 100) if packets_total > 0 else 0.0
 
         ping_result = self._monitor.ping("8.8.8.8", count=1)
-        latency_ms = ping_result.latency_ms or 0.0
+        latency_ms = ping_result.latency_ms if ping_result.success else None
 
-        jitter_ms = abs(latency_ms - self._prev_latency) if self._prev_latency is not None else 0.0
-        self._prev_latency = latency_ms
+        jitter_ms = abs(latency_ms - self._prev_latency) if (self._prev_latency is not None and latency_ms is not None) else 0.0
+        if latency_ms is not None:
+            self._prev_latency = latency_ms
 
         self._prev_stats = cur
+
+        # Calculate utilization percentage from interface speed
+        utilization_pct = 0.0
+        if self._iface_speed_mbps and self._iface_speed_mbps > 0:
+            utilization_pct = min((bandwidth_mbps / self._iface_speed_mbps) * 100, 100)
+
+        # Estimate queue delay from jitter and latency delta
+        queue_delay_ms = 0.0
+        if self._baseline and self._baseline.jitter_mean_ms > 0:
+            # Queue delay approximation: excess jitter beyond baseline
+            excess_jitter = max(0, jitter_ms - self._baseline.jitter_mean_ms)
+            queue_delay_ms = min(excess_jitter * 1.5, 100)
 
         return Measurement(
             session_id=self._session_id,
             timestamp=now,
             bandwidth_mbps=round(bandwidth_mbps, 3),
-            latency_ms=round(latency_ms, 2),
+            latency_ms=round(latency_ms, 2) if latency_ms is not None else None,
             jitter_ms=round(jitter_ms, 2),
             packet_loss_pct=round(loss_pct, 4),
-            utilization_pct=0.0,
-            queue_delay_ms=0.0,
+            utilization_pct=round(utilization_pct, 2),
+            queue_delay_ms=round(queue_delay_ms, 2),
         )
 
     def _compute_baseline(self) -> None:

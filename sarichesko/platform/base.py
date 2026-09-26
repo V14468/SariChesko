@@ -74,11 +74,26 @@ class NetworkMonitorBase(ABC):
 
 
 class TrafficControllerBase(ABC):
+    # Subclasses must set this as a class attribute (frozenset of algo name strings).
+    SUPPORTED_ALGORITHMS: frozenset[str] = frozenset()
+
     @abstractmethod
     def is_supported(self) -> bool: ...
 
     @abstractmethod
     def requires_elevation(self) -> bool: ...
+
+    @abstractmethod
+    def is_elevated(self) -> bool:
+        """Return True if the current process has the privileges needed to
+        apply traffic-control changes (Administrator on Windows, root on
+        Linux).  Implementations must be fail-safe: return False on any
+        error rather than raising."""
+        ...
+
+    def is_algorithm_supported(self, algorithm: str) -> bool:
+        """Check whether *algorithm* is natively supported on this platform."""
+        return algorithm in self.SUPPORTED_ALGORITHMS
 
     @abstractmethod
     def save_snapshot(self, iface: str) -> ConfigSnapshot: ...

@@ -100,9 +100,10 @@ class WindowsNetworkMonitor(NetworkMonitorBase):
                 # Match various ipconfig gateway formats across locales
             for line in out.stdout.splitlines():
                 line_stripped = line.strip()
-                    # English: "Default Gateway . . . : 192.168.x.x"
-                    # Also handles lines that just have an IP after the gateway label
-                if "gateway" in line_stripped.lower() or "puerta" in line_stripped.lower() or "gateway" in line_stripped.lower():
+                # English: "Default Gateway . . . : 192.168.x.x"
+                # Spanish: "Puerta de enlace predeterminada . . . : 192.168.x.x"
+                # Also handles lines that just have an IP after the gateway label
+                if ("gateway" in line_stripped.lower() or "puerta" in line_stripped.lower()):
                     match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", line_stripped)
                     if match:
                         return match.group(1)

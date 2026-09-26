@@ -1,5 +1,6 @@
 import subprocess
 import shutil
+import sys
 from typing import Optional
 
 from ..base import TrafficControllerBase, ConfigSnapshot, ApplyResult
@@ -49,9 +50,6 @@ class WindowsTrafficController(TrafficControllerBase):
 
     SUPPORTED_ALGORITHMS = SUPPORTED_ALGORITHMS
 
-    def is_algorithm_supported(self, algorithm: str) -> bool:
-        return algorithm in self.SUPPORTED_ALGORITHMS
-
     def is_supported(self) -> bool:
         if shutil.which("powershell") is None:
             return False
@@ -67,6 +65,18 @@ class WindowsTrafficController(TrafficControllerBase):
         # Writing to the live (ActiveStore) QoS policy store changes system
         # network configuration and requires an elevated (Administrator) shell.
         return True
+
+    def is_elevated(self) -> bool:
+        """Check if running as Administrator on Windows.  Fail-safe: returns
+        False on any error (including being called on a non-Windows platform
+        where ctypes.windll doesn't exist)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
 
     def _policy_name(self, iface: str) -> str:
         safe = "".join(c if c.isalnum() else "_" for c in iface)

@@ -74,6 +74,23 @@ class DiagnoseView(QWidget):
         except Exception:
             self._iface_combo.addItem("No interfaces found")
 
+        # Pre-select saved default interface
+        try:
+            from ...storage.db import get_connection, init_db
+            from ...storage.repository import Repository
+            conn = get_connection()
+            init_db(conn)
+            repo = Repository(conn)
+            default_iface = repo.get_setting("default_interface", "")
+            conn.close()
+            if default_iface:
+                for i in range(self._iface_combo.count()):
+                    if self._iface_combo.itemData(i) == default_iface:
+                        self._iface_combo.setCurrentIndex(i)
+                        break
+        except Exception:
+            pass
+
         # Progress bar (compact)
         self._progress_label = QLabel("Ready to run diagnostic")
         self._progress_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")

@@ -26,6 +26,7 @@ class LiveNetworkView(QWidget):
         self._conn = get_connection()
         init_db(self._conn)
         self._repo = Repository(self._conn)
+        self._conn_closed = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(32, 28, 32, 28)
@@ -70,6 +71,17 @@ class LiveNetworkView(QWidget):
                     self._iface_combo.addItem(label, iface.name)
         except Exception:
             self._iface_combo.addItem("No interfaces found")
+
+        # Pre-select saved default interface
+        try:
+            default_iface = self._repo.get_setting("default_interface", "")
+            if default_iface:
+                for i in range(self._iface_combo.count()):
+                    if self._iface_combo.itemData(i) == default_iface:
+                        self._iface_combo.setCurrentIndex(i)
+                        break
+        except Exception:
+            pass
 
         # Charts row
         charts_row = QHBoxLayout()
@@ -210,3 +222,22 @@ class LiveNetworkView(QWidget):
 
     def _on_baseline(self, b):
         self._repo.save_baseline(b)
+
+    def closeEvent(self, event):
+        """Close database connection when widget is destroyed."""
+        if self._conn and not self._conn_closed:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn_closed = True
+        super().closeEvent(event)
+
+    def __del__(self):
+        """Ensure connection is closed on garbage collection."""
+        if self._conn and not self._conn_closed:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn_closed = True

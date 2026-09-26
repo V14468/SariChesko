@@ -1,3 +1,4 @@
+import os
 import subprocess
 import shutil
 
@@ -36,15 +37,20 @@ class LinuxTrafficController(TrafficControllerBase):
 
     SUPPORTED_ALGORITHMS = frozenset({"Leaky Bucket", "Token Bucket", "RED", "CoDel"})
 
-    def is_algorithm_supported(self, algorithm: str) -> bool:
-        return algorithm in self.SUPPORTED_ALGORITHMS
-
     def is_supported(self) -> bool:
         return shutil.which("tc") is not None
 
     def requires_elevation(self) -> bool:
         # Modifying qdiscs requires CAP_NET_ADMIN, i.e. root.
         return True
+
+    def is_elevated(self) -> bool:
+        """Check if running as root on Linux.  Fail-safe: returns False on
+        any error (e.g. if os.geteuid doesn't exist on some platform)."""
+        try:
+            return os.geteuid() == 0
+        except Exception:
+            return False
 
     def save_snapshot(self, iface: str) -> ConfigSnapshot:
         try:

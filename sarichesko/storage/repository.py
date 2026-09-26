@@ -150,3 +150,35 @@ class Repository:
     def get_session_interface(self, session_id: str) -> Optional[str]:
         row = self._conn.execute("SELECT interface FROM sessions WHERE id=?", (session_id,)).fetchone()
         return row["interface"] if row else None
+
+    # --- Data management ---
+    def clear_history(self) -> None:
+        """Delete all transient diagnostic/measurement data but preserve
+        baselines and settings (so the user doesn't lose their calibration
+        or preferences)."""
+        self._conn.executescript("""
+            DELETE FROM measurements;
+            DELETE FROM isp_diagnostics;
+            DELETE FROM diagnostic_runs;
+            DELETE FROM applied_policies;
+            DELETE FROM simulation_results;
+            DELETE FROM sessions;
+        """)
+        self._conn.commit()
+
+    def clear_baselines(self) -> None:
+        """Delete all saved interface baselines."""
+        self._conn.execute("DELETE FROM baselines")
+        self._conn.commit()
+
+    def get_history_counts(self) -> dict:
+        """Return row counts for each data table."""
+        tables = [
+            "sessions", "measurements", "diagnostic_runs",
+            "simulation_results", "applied_policies", "baselines",
+        ]
+        counts = {}
+        for t in tables:
+            row = self._conn.execute(f"SELECT COUNT(*) AS cnt FROM {t}").fetchone()
+            counts[t] = row["cnt"] if row else 0
+        return counts

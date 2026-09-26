@@ -86,15 +86,16 @@ class DiagnosticsWorker(QThread):
                 loss = (drops / packets_total * 100) if packets_total > 0 else 0.0
 
                 ping_result = self._monitor.ping("8.8.8.8", count=1)
-                latency = ping_result.latency_ms or 0.0
-                jitter = abs(latency - prev_latency) if prev_latency is not None else 0.0
-                prev_latency = latency
+                latency = ping_result.latency_ms if ping_result.success else None
+                jitter = abs(latency - prev_latency) if (prev_latency is not None and latency is not None) else 0.0
+                if latency is not None:
+                    prev_latency = latency
 
                 m = Measurement(
                     session_id=self._session_id,
                     timestamp=time.time(),
                     bandwidth_mbps=round(bw, 3),
-                    latency_ms=round(latency, 2),
+                    latency_ms=round(latency, 2) if latency is not None else None,
                     jitter_ms=round(jitter, 2),
                     packet_loss_pct=round(loss, 4),
                     utilization_pct=0.0,
@@ -107,11 +108,14 @@ class DiagnosticsWorker(QThread):
             self.progress.emit("Scoring congestion...", 85)
 
             # Step 3: Score using averaged measurement
+            valid_latencies = [m.latency_ms for m in measurements if m.latency_ms is not None]
+            avg_latency = sum(valid_latencies) / len(valid_latencies) if valid_latencies else 0.0
+
             avg_m = Measurement(
                 session_id=self._session_id,
                 timestamp=now,
                 bandwidth_mbps=sum(m.bandwidth_mbps for m in measurements) / len(measurements),
-                latency_ms=sum(m.latency_ms for m in measurements) / len(measurements),
+                latency_ms=round(avg_latency, 2),
                 jitter_ms=sum(m.jitter_ms for m in measurements) / len(measurements),
                 packet_loss_pct=sum(m.packet_loss_pct for m in measurements) / len(measurements),
                 utilization_pct=0.0,
@@ -119,7 +123,8 @@ class DiagnosticsWorker(QThread):
             )
 
             baseline = repo.get_baseline(self._iface)
-            cong_score = score_congestion(avg_m, baseline)
+            sensitivity = float(repo.get_setting("congestion_sensitivity", "1.0"))
+            cong_score = score_congestion(avg_m, baseline, sensitivity=sensitivity)
 
             # Step 4: Build traffic profile and recommend
             self.progress.emit("Generating recommendation...", 92)

@@ -98,8 +98,9 @@ class ISPProbeWorker(QThread):
         self.probe_progress.emit("Testing DNS resolution...", 80)
         dns_ok = False
         try:
-            socket.setdefaulttimeout(5)
-            addr = socket.gethostbyname("www.google.com")
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                addr = ex.submit(socket.gethostbyname, "www.google.com").result(timeout=5)
             dns_ok = bool(addr)
         except Exception:
             dns_ok = False

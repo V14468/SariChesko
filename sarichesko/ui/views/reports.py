@@ -20,9 +20,9 @@ ALGO_COLORS = {
 
 SEVERITY_COLORS = {
     "NONE": "#00e5a3",
-    "LOW": "#00f0ff",
-    "MEDIUM": "#f59e0b",
-    "HIGH": "#f97316",
+    "MILD": "#00f0ff",
+    "MODERATE": "#f59e0b",
+    "SEVERE": "#f97316",
     "CRITICAL": "#ef4444",
 }
 
@@ -464,9 +464,9 @@ class ReportsView(QWidget):
         scores = [_number(r.get("congestion_score")) for r in diags]
         avg_score = _avg(scores)
         max_score = max(scores) if scores else None
-        high_runs = sum(1 for r in diags if (r.get("severity") or "NONE") in ("HIGH", "CRITICAL"))
+        high_runs = sum(1 for r in diags if (r.get("severity") or "NONE") in ("SEVERE", "CRITICAL"))
 
-        severity_order = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        severity_order = {"NONE": 0, "MILD": 1, "MODERATE": 2, "SEVERE": 3, "CRITICAL": 4}
         highest_severity = "NONE"
         for row in diags:
             sev = row.get("severity") or "NONE"
@@ -498,10 +498,10 @@ class ReportsView(QWidget):
         if not diags and not sims and not fixes:
             verdict = "No Evidence"
             color = "#64748b"
-        elif highest_severity in ("HIGH", "CRITICAL") or degraded_isp:
+        elif highest_severity in ("SEVERE", "CRITICAL") or degraded_isp:
             verdict = "Action Needed"
             color = "#ef4444" if highest_severity == "CRITICAL" else "#f97316"
-        elif highest_severity == "MEDIUM":
+        elif highest_severity == "MODERATE":
             verdict = "Watch Closely"
             color = "#f59e0b"
         else:
@@ -566,7 +566,7 @@ class ReportsView(QWidget):
             findings.append((
                 "Period congestion average",
                 f"{avg_score:.1f} across {len(diags)} diagnostic run(s).",
-                "#00f0ff" if avg_score < 40 else "#f59e0b",
+                "#00f0ff" if avg_score < 20 else "#f59e0b",
             ))
         if high_runs:
             findings.append((

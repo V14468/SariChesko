@@ -85,8 +85,8 @@ def recommend(
             actions=["Contact your ISP", "Check ISP status page", "Try alternative DNS (8.8.8.8 / 1.1.1.1)"],
         )
 
-    # No congestion
-    if score.score < 15:
+    # No congestion - align with congestion_scorer NONE threshold (0-20)
+    if score.score < 20:
         return Recommendation(
             algo=None,
             parameters={},

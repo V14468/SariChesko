@@ -28,7 +28,12 @@ class REDQueue:
         elif self._avg_queue < self._max_th:
             # Probabilistic drop
             self._count += 1
-            pb = self._max_p * (self._avg_queue - self._min_th) / (self._max_th - self._min_th)
+            # Guard against division by zero when min_th == max_th
+            denom = self._max_th - self._min_th
+            if denom <= 0:
+                pb = self._max_p
+            else:
+                pb = self._max_p * (self._avg_queue - self._min_th) / denom
             pa = pb / (1 - self._count * pb) if (1 - self._count * pb) > 0 else 1.0
             if random.random() < pa:
                 self._drops += 1

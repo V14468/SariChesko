@@ -209,3 +209,98 @@ def test_settings_storage(repo):
 
     repo.set_setting("custom_key", "updated_val")
     assert repo.get_setting("custom_key") == "updated_val"
+
+
+# ── clear_history / clear_baselines / get_history_counts ──────────────
+
+def _populate_all_tables(repo):
+    """Insert one row into every data table for testing bulk operations."""
+    repo.save_session(Session(id="s1", started_at=100.0, interface="eth0"))
+    repo.save_measurement(Measurement(
+        session_id="s1", timestamp=101.0, bandwidth_mbps=50.0, latency_ms=10.0,
+        jitter_ms=1.0, packet_loss_pct=0.0, utilization_pct=30.0, queue_delay_ms=0.0,
+    ))
+    repo.save_baseline(Baseline(
+        interface="eth0", measured_at=90.0,
+        latency_mean_ms=10.0, latency_stddev_ms=1.0,
+        loss_mean_pct=0.0, bandwidth_mean_mbps=100.0, jitter_mean_ms=1.0,
+    ))
+    repo.save_isp_diagnostic(ISPDiagnostic(
+        session_id="s1", timestamp=102.0, verdict="healthy",
+        details="ok", gateway_ms=2.0, isp_hop_ms=5.0, wan_ms=20.0, dns_ok=True,
+    ))
+    repo.save_diagnostic_run(DiagnosticRun(
+        id="dr1", session_id="s1", timestamp=103.0, congestion_score=25.0,
+        severity="MILD", dominant_signal="latency_delta", isp_verdict="healthy",
+        recommended_algo="CoDel", recommendation_reason="test", confidence="HIGH",
+    ))
+    repo.save_applied_policy(AppliedPolicy(
+        id="ap1", diagnostic_id="dr1", timestamp=104.0, interface="eth0",
+        algorithm="CoDel", parameters="{}", snapshot_before="snap",
+        score_before=25.0, score_after=10.0, verdict="improved",
+    ))
+    repo.save_simulation_result(SimulationResult(
+        id="sr1", timestamp=105.0, scenario="bursty_traffic", algorithm="CoDel",
+        engine_used="python_sim", parameters="{}", throughput_mbps=90.0,
+        avg_latency_ms=8.0, loss_pct=0.1, fairness_index=0.99, metrics_detail="{}",
+    ))
+    repo.set_setting("test_key", "test_val")
+
+
+def test_get_history_counts(repo):
+    counts = repo.get_history_counts()
+    assert all(v == 0 for v in counts.values())
+    assert set(counts.keys()) == {
+        "sessions", "measurements", "diagnostic_runs",
+        "simulation_results", "applied_policies", "baselines",
+    }
+
+    _populate_all_tables(repo)
+    counts = repo.get_history_counts()
+    assert counts["sessions"] == 1
+    assert counts["measurements"] == 1
+    assert counts["diagnostic_runs"] == 1
+    assert counts["simulation_results"] == 1
+    assert counts["applied_policies"] == 1
+    assert counts["baselines"] == 1
+
+
+def test_clear_history_preserves_baselines_and_settings(repo):
+    _populate_all_tables(repo)
+    repo.clear_history()
+
+    counts = repo.get_history_counts()
+    assert counts["sessions"] == 0
+    assert counts["measurements"] == 0
+    assert counts["diagnostic_runs"] == 0
+    assert counts["simulation_results"] == 0
+    assert counts["applied_policies"] == 0
+    # Baselines must survive
+    assert counts["baselines"] == 1
+    # Settings must survive
+    assert repo.get_setting("test_key") == "test_val"
+
+
+def test_clear_baselines_only(repo):
+    _populate_all_tables(repo)
+    repo.clear_baselines()
+
+    counts = repo.get_history_counts()
+    assert counts["baselines"] == 0
+    # Everything else must survive
+    assert counts["sessions"] == 1
+    assert counts["measurements"] == 1
+    assert counts["diagnostic_runs"] == 1
+
+
+def test_clear_history_on_empty_db(repo):
+    """Must not crash when there's nothing to delete."""
+    repo.clear_history()
+    counts = repo.get_history_counts()
+    assert all(v == 0 for v in counts.values())
+
+
+def test_clear_baselines_on_empty_db(repo):
+    """Must not crash when there are no baselines."""
+    repo.clear_baselines()
+    assert repo.get_baseline("eth0") is None

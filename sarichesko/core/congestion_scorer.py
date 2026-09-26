@@ -23,10 +23,10 @@ SEVERITY_THRESHOLDS = [
 ]
 
 
-def classify_severity(score: float) -> str:
+def classify_severity(score: float, sensitivity: float = 1.0) -> str:
     result = "NONE"
     for threshold, label in SEVERITY_THRESHOLDS:
-        if score >= threshold:
+        if score >= threshold / sensitivity:
             result = label
     return result
 
@@ -35,6 +35,7 @@ def score_congestion(
     current: Measurement,
     baseline: Optional[Baseline],
     recent_scores: list[float] = None,
+    sensitivity: float = 1.0,
 ) -> CongestionScore:
     if baseline is None:
         return CongestionScore(
@@ -102,7 +103,7 @@ def score_congestion(
 
     return CongestionScore(
         score=score,
-        severity=classify_severity(score),
+        severity=classify_severity(score, sensitivity),
         signals=signals,
         dominant_signal=dominant,
         is_persistent=is_persistent,
