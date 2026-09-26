@@ -20,7 +20,7 @@ Network degradation frequently suffers from ambiguous fault localization: end us
 1. **Telemetry & Baselines:** Continuously samples physical interface metrics and establishes dynamic empirical baselines.
 2. **Multi-Target Fault Attribution:** Dispatches sequential probes across the network hierarchy (loopback $\to$ LAN gateway $\to$ ISP edge $\to$ transit WAN $\to$ DNS $\to$ CDN) to classify whether bottlenecks are edge-local or upstream.
 3. **Deterministic Heuristic Selection:** Recommends optimal algorithmic remedies (Leaky Bucket, Token Bucket, RED, or CoDel) based on observable queue characteristics.
-4. **Human-in-the-Loop Safe Actuation:** Executes operating-system-level traffic control (via Linux `iproute2`/`tc` or Windows QoS/WTC) exclusively upon explicit user authorization.
+4. **Human-in-the-Loop Safe Actuation:** Executes operating-system-level traffic control (via Linux `iproute2`/`tc` or Windows PowerShell `NetQosPolicy`) exclusively upon explicit user authorization.
 5. **Empirical Verification & Automatic Rollback:** Measures post-intervention link performance against pre-intervention state, offering deterministic one-click rollback if link quality fails to improve.
 
 ```mermaid
@@ -46,12 +46,12 @@ To support both live system management and reproducible empirical experimentatio
 * **Interface Auto-Discovery:** Enumerates network interfaces via platform-native socket APIs and `psutil`.
 * **Dynamic Baselining:** Derives statistically normalized baselines for latency, throughput, and packet-drop rates under resting conditions versus loaded states.
 * **Anomaly Detection:** Flags deviations from established statistical baselines using composite scoring.
-* **Kernel-Level Policy Enforcement:** Modifies queuing disciplines (`qdisc`) on Linux or Traffic Control / Policy QoS filters on Windows.
-* **Snapshot & Verification:** Enforces a 30-second empirical post-actuation validation cycle with automated state recovery upon regression.
+* **Kernel-Level Policy Enforcement:** Modifies queuing disciplines (`qdisc`) on Linux or PowerShell `NetQosPolicy` filters on Windows.
+* **Snapshot & Verification:** Enforces an empirical post-actuation validation cycle (re-measuring link conditions via a ~5-second diagnostic pass) with automated state recovery upon regression.
 
 ### Paradigm B: Discrete-Event Simulation Laboratory
 * **Controlled Evaluation Sandbox:** Provides an isolated testbed to analyze algorithm dynamics without destabilizing host networking.
-* **Dual-Engine Architecture:** Backed by **ns-3** (Network Simulator 3) via an asynchronous subprocess bridge, paired with a self-contained, pure-Python discrete-event fallback engine.
+* **Simulation Engine Architecture:** Powered by a pure-Python discrete-event simulation engine (`python_sim.py`), with the architecture designed to support an optional **ns-3** (Network Simulator 3) subprocess bridge as a planned advanced backend.
 * **Comparative Benchmark Matrix:** Evaluates all four queue-management disciplines concurrently against identical synthetic packet injection profiles (bursty distributions, Pareto transfers, continuous bulk TCP flows).
 * **Architectural Isolation:** Strict boundary enforcement ensures zero simulation execution pathways interface with system-level traffic control controllers.
 
@@ -139,7 +139,8 @@ The application is structured into four cleanly decoupled tiers adhering to sepa
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       PRESENTATION LAYER (PySide6)                      │
 │   Dashboard View   │   Live Telemetry View   │   Diagnostic Run View    │
-│   Simulation Lab   │   Algorithm Comparison  │   History & Reports      │
+│   Simulation Lab   │   Algorithm Comparison  │   History View           │
+│   Reports View     │   Settings View         │                          │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ Qt Signals & Slots
 ┌────────────────────────────────────▼────────────────────────────────────┐
@@ -157,8 +158,8 @@ The application is structured into four cleanly decoupled tiers adhering to sepa
 │                    PLATFORM ABSTRACTION LAYER (PAL)                     │
 │          NetworkMonitor                   TrafficController             │
 │   ┌─────────────────────────────┐   ┌─────────────────────────────┐     │
-│   │ Windows: WTC / Netsh / WMI  │   │ Windows: QoS Policies / WTC │     │
-│   │ Linux:   sysfs / rtnetlink  │   │ Linux:   tc (iproute2)      │     │
+│   │ Windows: psutil / ipconfig  │   │ Windows: NetQosPolicy (PS)  │     │
+│   │ Linux:   sysfs / procfs     │   │ Linux:   tc (iproute2)      │     │
 │   └─────────────────────────────┘   └─────────────────────────────┘     │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │
@@ -178,8 +179,8 @@ SariChesko/
 │   ├── platform/                       # Platform Abstraction Layer (PAL)
 │   │   ├── base.py                     # Abstract Base Classes (Monitor, Controller)
 │   │   ├── windows/
-│   │   │   ├── monitor.py              # Windows WMI & socket performance counters
-│   │   │   └── controller.py           # Windows QoS & netsh traffic control adapter
+│   │   │   ├── monitor.py              # Windows psutil & native CLI parsers (ipconfig, route, ping, tracert)
+│   │   │   └── controller.py           # Windows PowerShell NetQosPolicy traffic control adapter
 │   │   └── linux/
 │   │       ├── monitor.py              # Linux sysfs & procfs network telemetry
 │   │       └── controller.py           # Linux iproute2 / tc qdisc manager
@@ -191,9 +192,9 @@ SariChesko/
 │   │   ├── recommendation_engine.py    # Deterministic rule-based algorithm selector
 │   │   └── traffic_control_manager.py  # Safe execution, verification & rollback
 │   ├── simulation/
-│   │   ├── ns3_bridge.py               # Subprocess bridge to ns-3 runtime
+│   │   ├── ns3_bridge.py               # Subprocess bridge to ns-3 runtime (planned backend)
 │   │   ├── python_sim.py               # Pure-Python discrete-event simulation engine
-│   │   ├── scenarios/                  # Workload profiles (bulk transfer, bursty)
+│   │   ├── scenarios/                  # Workload scenario definitions (SCENARIOS in base_scenario.py)
 │   │   └── algo_runners/               # Leaky Bucket, Token Bucket, RED, CoDel runners
 │   ├── storage/
 │   │   ├── db.py                       # SQLite connection pool & schema migrations
@@ -202,12 +203,24 @@ SariChesko/
 │   └── ui/
 │       ├── main_window.py              # Shell frame, status bar & navigation dock
 │       ├── views/                      # Modular view controllers
-│       └── widgets/                    # Reusable visualizers (PyQtGraph / Matplotlib)
+│       └── widgets/                    # Custom QPainter-based visualizers (no external plotting dependencies)
 ├── tests/                              # Unit & integration test suites
 ├── packaging/                          # PyInstaller specifications & installer scripts
 ├── pyproject.toml                      # Project build configuration & dependency manifest
 └── requirements.txt                    # Pinned Python package dependencies
 ```
+
+### Application Views & Capabilities
+
+SariChesko organizes its diagnostic and simulation workflow across modular views:
+* **Dashboard:** High-level operational status, active interface indicators, and rapid diagnostic trigger.
+* **Live Telemetry:** Real-time throughput, latency, jitter, and packet loss streaming charts.
+* **Diagnostics:** Multi-hop probe execution, composite congestion scoring (0–100), bottleneck attribution, and safe rule-based fix application.
+* **Simulation Lab:** Interactive testbed running queuing algorithms against synthetic workloads (Bulk, Bursty, Mixed).
+* **Compare Algorithms:** Side-by-side benchmarking of Leaky Bucket, Token Bucket, RED, and CoDel across standardized metrics.
+* **History:** Chronological audit trail of past diagnostic runs, baseline updates, and applied traffic policies.
+* **Reports:** Evidence brief generator that compiles historical diagnostics, applied fixes (with before/after scores and rollback status), simulation proof, and an evidence ledger into structured Markdown (`.md`) briefs exportable to disk.
+* **Settings:** Configuration center displaying live privilege/elevation status (`is_elevated`), default network interface preferences, configurable congestion detection sensitivity (Conservative `0.75`, Balanced `1.0`, Aggressive `1.5`), and local SQLite data management (history purge and baseline reset with confirmation dialogs).
 
 ---
 
@@ -216,12 +229,12 @@ SariChesko/
 | Subsystem | Technology | Purpose & Architectural Rationale |
 | :--- | :--- | :--- |
 | **GUI Framework** | PySide6 (Qt 6 for Python) | Hardware-accelerated, native desktop presentation across platforms. |
-| **Telemetry Charting** | PyQtGraph & Matplotlib | Real-time 60 FPS multi-trace rendering with minimal CPU overhead. |
+| **Telemetry Charting** | Custom QPainter / PySide6 | Hardware-accelerated, Qt-native 60 FPS vector rendering with antialiasing and minimal CPU overhead (no heavy third-party dependencies). |
 | **Local Storage** | SQLite 3 | Fully local, zero-configuration embedded persistence engine. |
-| **Network Simulation** | ns-3 / Discrete Event Python | Academic-grade discrete-event packet simulation with a portable fallback. |
+| **Network Simulation** | Pure-Python Discrete Event Engine | Self-contained, portable discrete-event packet simulation (ns-3 bridge planned as future backend). |
 | **Linux Traffic Control** | `tc` via `iproute2` | Direct kernel egress queuing discipline (`qdisc`) configuration. |
-| **Windows Traffic Control**| `netsh` / Windows Policy QoS | Platform-native network throttling and traffic marking. |
-| **System Telemetry** | `psutil` + native OS sockets | Non-intrusive retrieval of NIC bytes, packet drops, and socket states. |
+| **Windows Traffic Control**| PowerShell `NetQosPolicy` | Native QoS policy cmdlets (`New-NetQosPolicy`) for egress rate throttling. |
+| **System Telemetry** | `psutil` + native OS CLI utilities | Non-intrusive retrieval of NIC bytes, packet drops, and socket states via `psutil` and OS binaries (`ipconfig`, `route`, `ping`, `tracert`/`traceroute`). |
 | **Distribution / Build** | PyInstaller | Standalone binary bundling for Windows (`.exe`) and Linux (`ELF`). |
 
 ---
@@ -233,7 +246,7 @@ Given that modifying network parameters can compromise host connectivity, SariCh
 1. **Explicit Human-in-the-Loop Authorization:** The application never silently mutates operating system configurations. Every policy change requires explicit confirmation through a structured modal dialog detailing the exact command and parameters.
 2. **Principle of Least Privilege:** SariChesko does not execute with permanent administrative/root privileges. Elevated access is requested transiently through native elevation prompts (`sudo` / UAC) only at the moment of actuation.
 3. **Pre-Flight State Snapshotting:** The exact operational state of network interfaces and existing queuing disciplines is serialized prior to any mutation.
-4. **Closed-Loop Empirical Verification:** After applying a policy, the system monitors link performance over a mandatory 30-second observation window, evaluating latency, jitter, and throughput against the pre-intervention baseline.
+4. **Closed-Loop Empirical Verification:** After applying a policy, the system re-measures link performance via a dedicated ~5-second diagnostic pass (10 samples at 0.5-second intervals plus reachability checks), evaluating latency, jitter, and packet loss against the pre-intervention baseline.
 5. **Deterministic One-Click Rollback:** If the post-intervention state exhibits regression or fails to resolve the bottleneck, the user is prompted to restore the initial configuration with a single click.
 6. **ISP-Isolation Barrier:** If multi-hop probing localizes the degradation to an upstream hop, host traffic mutation is prevented by design.
 7. **Simulation Isolation:** The simulation subsystem executes in an isolated sandbox with no code paths leading to the Platform Abstraction Layer's actuators.
@@ -246,11 +259,11 @@ Given that modifying network parameters can compromise host connectivity, SariCh
 Phase 1: Architecture Foundation    [Done] Core application shell, navigation, SQLite, themes
 Phase 2: Real-Time Telemetry        [Done] Multi-interface monitoring, baselining, anomaly flags
 Phase 3: Diagnostics & ISP Probing  [Done] Multi-hop probing pipeline & composite congestion scoring
-Phase 4: Simulation Laboratory      [Done] ns-3 bridge integration & pure-Python discrete-event fallback
+Phase 4: Simulation Laboratory      [Done] Pure-Python discrete-event simulation engine; [Planned] ns-3 bridge integration
 Phase 5: Recommendation Engine      [Done] Rule-based deterministic algorithm recommendation logic
-Phase 6: Platform Traffic Control   [Done] Linux (tc) and Windows (QoS) actuation with privilege gating
+Phase 6: Platform Traffic Control   [Done] Linux (tc) and Windows (NetQosPolicy) actuation with privilege gating
 Phase 7: Verification & Recovery    [Done] Closed-loop post-change validation and rollback mechanics
-Phase 8: Packaging & Validation     [In Progress] Cross-platform installer builds & automated test suites
+Phase 8: Packaging & Validation     [Done] 119 automated unit & integration tests; standalone PyInstaller specifications
 ```
 
 ---
@@ -259,8 +272,8 @@ Phase 8: Packaging & Validation     [In Progress] Cross-platform installer build
 
 | Platform | Telemetry Monitoring | Multi-Hop ISP Diagnostics | Simulation Lab | Kernel Traffic Actuation |
 | :--- | :---: | :---: | :---: | :---: |
-| **Linux** (Kernel 5.4+) | Supported (`sysfs`/`proc`) | Supported (Raw Sockets) | Supported (ns-3 / PySim) | Supported (`iproute2` / `tc`) |
-| **Windows** (10 / 11) | Supported (`psutil`/`WMI`) | Supported (WinSock) | Supported (ns-3 / PySim) | Supported (`netsh` / QoS API) |
+| **Linux** (Kernel 5.4+) | Supported (`sysfs` / `procfs` / `psutil`) | Supported (System `ping` / `traceroute`) | Supported (Python DES; ns-3 planned) | Supported (`iproute2` / `tc`) |
+| **Windows** (10 / 11) | Supported (`psutil` / `ipconfig` / `route`) | Supported (System `ping` / `tracert`) | Supported (Python DES; ns-3 planned) | Supported (PowerShell `NetQosPolicy`) |
 | **macOS** (Darwin) | Experimental | Experimental | Supported (PySim only) | Unsupported (Deferred to v2) |
 
 ---

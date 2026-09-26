@@ -4,7 +4,7 @@ import os
 spec_dir = os.path.abspath(SPECPATH)
 root_dir = os.path.abspath(os.path.join(spec_dir, '..', '..'))
 
-entry_point = os.path.join(root_dir, 'sarichesko', 'app.py')
+entry_point = os.path.join(root_dir, 'packaging', 'run_sarichesko.py')
 
 a = Analysis(
     [entry_point],
