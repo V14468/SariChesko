@@ -138,7 +138,7 @@ class MonitorEngine(QThread):
 
     def _compute_baseline(self) -> None:
         window = self._history[-self._baseline_window:]
-        lats = [m.latency_ms for m in window if m.latency_ms > 0]
+        lats = [m.latency_ms for m in window if m.latency_ms is not None and m.latency_ms > 0]
         losses = [m.packet_loss_pct for m in window]
         bws = [m.bandwidth_mbps for m in window]
         jits = [m.jitter_ms for m in window]
@@ -159,7 +159,7 @@ class MonitorEngine(QThread):
         signals = {}
 
         lat_threshold = b.latency_mean_ms + 2 * b.latency_stddev_ms
-        if lat_threshold > 0 and m.latency_ms > lat_threshold:
+        if lat_threshold > 0 and m.latency_ms is not None and m.latency_ms > lat_threshold:
             signals["latency"] = min((m.latency_ms - b.latency_mean_ms) / (b.latency_stddev_ms + 0.01) * 10, 100)
         else:
             signals["latency"] = 0.0

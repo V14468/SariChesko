@@ -308,7 +308,9 @@ class DiagnoseView(QWidget):
 
         ms = result.measurements
         if ms:
-            self._stat_values["latency"].setText(f"{sum(m.latency_ms for m in ms)/len(ms):.1f}")
+            valid_lat = [m.latency_ms for m in ms if m.latency_ms is not None]
+            lat_str = f"{sum(valid_lat)/len(valid_lat):.1f}" if valid_lat else "—"
+            self._stat_values["latency"].setText(lat_str)
             self._stat_values["loss"].setText(f"{sum(m.packet_loss_pct for m in ms)/len(ms):.2f}")
             self._stat_values["bandwidth"].setText(f"{sum(m.bandwidth_mbps for m in ms)/len(ms):.2f}")
             self._stat_values["jitter"].setText(f"{sum(m.jitter_ms for m in ms)/len(ms):.1f}")
@@ -364,7 +366,8 @@ class DiagnoseView(QWidget):
             return
 
         ms = self._current_result.measurements
-        latency_before = sum(m.latency_ms for m in ms) / len(ms) if ms else None
+        valid_lats = [m.latency_ms for m in ms if m.latency_ms is not None] if ms else []
+        latency_before = sum(valid_lats) / len(valid_lats) if valid_lats else None
         loss_before = sum(m.packet_loss_pct for m in ms) / len(ms) if ms else None
 
         self._btn_apply_fix.setEnabled(False)

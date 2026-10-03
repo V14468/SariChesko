@@ -288,3 +288,17 @@ def test_score_congestion_trend():
     # Short history (< 5 items)
     recent_short = [10.0, 30.0]
     assert score_congestion(curr, base, recent_short).trend == "STABLE"
+
+
+def test_score_congestion_none_latency():
+    """Verify that a dropped packet (latency_ms is None) does not crash score_congestion."""
+    base = Baseline(
+        interface="eth0", measured_at=10.0,
+        latency_mean_ms=20.0, latency_stddev_ms=2.0,
+        loss_mean_pct=0.0, bandwidth_mean_mbps=100.0, jitter_mean_ms=1.0
+    )
+    curr = Measurement(session_id="s1", timestamp=100.0, latency_ms=None, packet_loss_pct=10.0)
+    score = score_congestion(curr, base)
+    assert score.score > 0
+    assert score.signals.get("latency_delta") == 0.0
+    assert score.signals.get("packet_loss") > 0

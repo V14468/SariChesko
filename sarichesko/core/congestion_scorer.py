@@ -46,7 +46,7 @@ def score_congestion(
     signals = {}
 
     # Latency delta
-    if baseline.latency_mean_ms > 0 and baseline.latency_stddev_ms >= 0:
+    if baseline.latency_mean_ms > 0 and baseline.latency_stddev_ms >= 0 and current.latency_ms is not None:
         delta = current.latency_ms - baseline.latency_mean_ms
         spread = baseline.latency_stddev_ms + 1.0
         signals["latency_delta"] = min(max((delta / spread) * 15, 0), 100)

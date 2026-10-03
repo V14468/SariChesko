@@ -157,7 +157,8 @@ class ApplyFixWorker(QThread):
             loss_after = None
             if after_result.measurements:
                 ms = after_result.measurements
-                latency_after = sum(m.latency_ms for m in ms) / len(ms)
+                valid_lats = [m.latency_ms for m in ms if m.latency_ms is not None]
+                latency_after = sum(valid_lats) / len(valid_lats) if valid_lats else None
                 loss_after = sum(m.packet_loss_pct for m in ms) / len(ms)
 
             conn = get_connection()

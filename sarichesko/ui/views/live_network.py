@@ -206,7 +206,8 @@ class LiveNetworkView(QWidget):
         self._bw_chart.add_value(m.bandwidth_mbps)
         self._jitter_chart.add_value(m.jitter_ms)
 
-        self._stat_labels["latency"].setText(f"{m.latency_ms:.1f} ms")
+        lat_text = f"{m.latency_ms:.1f} ms" if m.latency_ms is not None else "Timeout"
+        self._stat_labels["latency"].setText(lat_text)
         self._stat_labels["loss"].setText(f"{m.packet_loss_pct:.2f} %")
         self._stat_labels["bandwidth"].setText(f"{m.bandwidth_mbps:.2f} Mbps")
         self._stat_labels["jitter"].setText(f"{m.jitter_ms:.1f} ms")

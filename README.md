@@ -12,6 +12,100 @@ An open-source, cross-platform systems utility and network instrumentation testb
 
 ---
 
+## Screenshots
+
+| Dashboard | Diagnose &rarr; Recommendation |
+| :---: | :---: |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Diagnose](docs/screenshots/diagnose.png) |
+
+| Compare Algorithms | Reports (Evidence Brief) |
+| :---: | :---: |
+| ![Compare Algorithms](docs/screenshots/compare-algorithms.png) | ![Reports](docs/screenshots/reports.png) |
+
+| History | Settings |
+| :---: | :---: |
+| ![History](docs/screenshots/history.png) | ![Settings](docs/screenshots/settings.png) |
+
+> Screenshots above are genuine renders of the running application (seeded with representative
+> diagnostic data), not mockups.
+
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Abstract & System Overview](#abstract--system-overview)
+- [Dual Operational Paradigms](#dual-operational-paradigms)
+- [Algorithmic Framework](#algorithmic-framework)
+- [Multi-Hop Fault Attribution & ISP Outage Detection](#multi-hop-fault-attribution--isp-outage-detection)
+- [Heuristic Recommendation Engine](#heuristic-recommendation-engine)
+- [System Architecture](#system-architecture)
+- [Technical Specifications](#technical-specifications)
+- [Safety & Defensive Engineering Invariants](#safety--defensive-engineering-invariants)
+- [Development Roadmap & Milestones](#development-roadmap--milestones)
+- [Platform Support Matrix](#platform-support-matrix)
+- [License & Attribution](#license--attribution)
+
+---
+
+## Quick Start
+
+### Run from source (Windows or Linux)
+
+```bash
+git clone <repo-url>
+cd SariChesko
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+# Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+python -m sarichesko.app
+```
+
+Or use the install scripts, which do the same thing:
+
+```bash
+# Windows (PowerShell)
+scripts\install_windows.ps1
+
+# Linux
+bash scripts/install_linux.sh
+```
+
+### Build a standalone executable (no Python required to run it)
+
+```bash
+pip install -r requirements-dev.txt
+
+# Windows
+pyinstaller packaging\windows\sarichesko.spec --noconfirm
+# -> dist\SariChesko\SariChesko.exe
+
+# Linux
+pyinstaller packaging/linux/sarichesko.spec --noconfirm
+# -> dist/sarichesko/sarichesko
+```
+
+The build produces a one-folder distribution — copy the entire `dist/SariChesko/` (or
+`dist/sarichesko/`) folder to deploy; it runs standalone on a machine with no Python installed.
+
+### Run the test suite
+
+```bash
+# Windows
+set QT_QPA_PLATFORM=offscreen
+python -m pytest tests/ -q
+
+# Linux / macOS
+QT_QPA_PLATFORM=offscreen python -m pytest tests/ -q
+```
+
+---
+
 ## Abstract & System Overview
 
 Network degradation frequently suffers from ambiguous fault localization: end users cannot readily distinguish between local host bufferbloat, local area network (LAN) saturation, last-mile physical link degradation, and upstream transit provider outages. Consequently, applying host-level traffic control indiscriminately can be futile or counterproductive.
@@ -51,7 +145,7 @@ To support both live system management and reproducible empirical experimentatio
 
 ### Paradigm B: Discrete-Event Simulation Laboratory
 * **Controlled Evaluation Sandbox:** Provides an isolated testbed to analyze algorithm dynamics without destabilizing host networking.
-* **Simulation Engine Architecture:** Powered by a pure-Python discrete-event simulation engine (`python_sim.py`), with the architecture designed to support an optional **ns-3** (Network Simulator 3) subprocess bridge as a planned advanced backend.
+* **Simulation Engine Architecture:** Powered by a pure-Python discrete-event simulation engine (`python_sim.py`). An **ns-3** (Network Simulator 3) subprocess bridge (`ns3_bridge.py`) auto-detects local ns-3 installations and delegates simulation when available, with transparent fallback to the Python engine when ns-3 is absent — honestly labelling which engine actually ran.
 * **Comparative Benchmark Matrix:** Evaluates all four queue-management disciplines concurrently against identical synthetic packet injection profiles (bursty distributions, Pareto transfers, continuous bulk TCP flows).
 * **Architectural Isolation:** Strict boundary enforcement ensures zero simulation execution pathways interface with system-level traffic control controllers.
 
@@ -231,7 +325,7 @@ SariChesko organizes its diagnostic and simulation workflow across modular views
 | **GUI Framework** | PySide6 (Qt 6 for Python) | Hardware-accelerated, native desktop presentation across platforms. |
 | **Telemetry Charting** | Custom QPainter / PySide6 | Hardware-accelerated, Qt-native 60 FPS vector rendering with antialiasing and minimal CPU overhead (no heavy third-party dependencies). |
 | **Local Storage** | SQLite 3 | Fully local, zero-configuration embedded persistence engine. |
-| **Network Simulation** | Pure-Python Discrete Event Engine | Self-contained, portable discrete-event packet simulation (ns-3 bridge planned as future backend). |
+| **Network Simulation** | Pure-Python DES + ns-3 bridge | Self-contained Python DES with an implemented ns-3 subprocess bridge (`ns3_bridge.py`): auto-detects ns-3 installations, runs FlowMonitor-based simulations when available, transparently falls back to Python DES when absent. ns-3 subprocess integration is architecturally complete but untested end-to-end without a real ns-3 installation. |
 | **Linux Traffic Control** | `tc` via `iproute2` | Direct kernel egress queuing discipline (`qdisc`) configuration. |
 | **Windows Traffic Control**| PowerShell `NetQosPolicy` | Native QoS policy cmdlets (`New-NetQosPolicy`) for egress rate throttling. |
 | **System Telemetry** | `psutil` + native OS CLI utilities | Non-intrusive retrieval of NIC bytes, packet drops, and socket states via `psutil` and OS binaries (`ipconfig`, `route`, `ping`, `tracert`/`traceroute`). |
@@ -259,11 +353,11 @@ Given that modifying network parameters can compromise host connectivity, SariCh
 Phase 1: Architecture Foundation    [Done] Core application shell, navigation, SQLite, themes
 Phase 2: Real-Time Telemetry        [Done] Multi-interface monitoring, baselining, anomaly flags
 Phase 3: Diagnostics & ISP Probing  [Done] Multi-hop probing pipeline & composite congestion scoring
-Phase 4: Simulation Laboratory      [Done] Pure-Python discrete-event simulation engine; [Planned] ns-3 bridge integration
+Phase 4: Simulation Laboratory      [Done] Pure-Python discrete-event simulation engine; [Done] ns-3 bridge (detection + fallback tested, FlowMonitor XML parser implemented; real ns-3 subprocess untested — requires external ns-3 installation)
 Phase 5: Recommendation Engine      [Done] Rule-based deterministic algorithm recommendation logic
 Phase 6: Platform Traffic Control   [Done] Linux (tc) and Windows (NetQosPolicy) actuation with privilege gating
 Phase 7: Verification & Recovery    [Done] Closed-loop post-change validation and rollback mechanics
-Phase 8: Packaging & Validation     [Done] 119 automated unit & integration tests; standalone PyInstaller specifications
+Phase 8: Packaging & Validation     [Done] 169 automated unit & integration tests; standalone PyInstaller specifications
 ```
 
 ---
@@ -272,8 +366,8 @@ Phase 8: Packaging & Validation     [Done] 119 automated unit & integration test
 
 | Platform | Telemetry Monitoring | Multi-Hop ISP Diagnostics | Simulation Lab | Kernel Traffic Actuation |
 | :--- | :---: | :---: | :---: | :---: |
-| **Linux** (Kernel 5.4+) | Supported (`sysfs` / `procfs` / `psutil`) | Supported (System `ping` / `traceroute`) | Supported (Python DES; ns-3 planned) | Supported (`iproute2` / `tc`) |
-| **Windows** (10 / 11) | Supported (`psutil` / `ipconfig` / `route`) | Supported (System `ping` / `tracert`) | Supported (Python DES; ns-3 planned) | Supported (PowerShell `NetQosPolicy`) |
+| **Linux** (Kernel 5.4+) | Supported (`sysfs` / `procfs` / `psutil`) | Supported (System `ping` / `traceroute`) | Supported (Python DES + ns-3 bridge) | Supported (`iproute2` / `tc`) |
+| **Windows** (10 / 11) | Supported (`psutil` / `ipconfig` / `route`) | Supported (System `ping` / `tracert`) | Supported (Python DES + ns-3 bridge) | Supported (PowerShell `NetQosPolicy`) |
 | **macOS** (Darwin) | Experimental | Experimental | Supported (PySim only) | Unsupported (Deferred to v2) |
 
 ---

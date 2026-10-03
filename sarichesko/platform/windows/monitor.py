@@ -57,9 +57,19 @@ class WindowsNetworkMonitor(NetworkMonitorBase):
                 ["ping", "-n", str(count), "-w", "2000", host],
                 capture_output=True, text=True, timeout=30,
             )
-            match = re.search(r"Average\s*=\s*(\d+)\s*ms", out.stdout)
+            match = re.search(r"Average\s*=\s*(\d+)\s*ms", out.stdout, re.IGNORECASE)
             if match:
                 return PingResult(host=host, success=True, latency_ms=float(match.group(1)))
+            # Fallback 1: Extract individual reply times (handles single pings, time<1ms, or locale variants)
+            times = re.findall(r"time[=<]\s*(\d+)\s*ms", out.stdout, re.IGNORECASE)
+            if times:
+                avg = sum(float(t) for t in times) / len(times)
+                return PingResult(host=host, success=True, latency_ms=avg)
+            # Fallback 2: Any locale latency pattern like "=< 23ms"
+            generic_times = re.findall(r"[=<]\s*(\d+)\s*ms", out.stdout)
+            if generic_times:
+                avg = sum(float(t) for t in generic_times) / len(generic_times)
+                return PingResult(host=host, success=True, latency_ms=avg)
             if "Reply from" in out.stdout:
                 return PingResult(host=host, success=True, latency_ms=None)
             return PingResult(host=host, success=False, latency_ms=None, error=out.stdout.strip()[-200:])
