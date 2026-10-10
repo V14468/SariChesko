@@ -102,6 +102,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(root_dir, 'packaging', 'assets', 'sarichesko.ico'),
 )
 
 coll = COLLECT(

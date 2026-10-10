@@ -2,8 +2,9 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QFrame, QPushButton, QStackedWidget, QLabel,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 
+from .icon import create_app_icon
 from .views.welcome import WelcomeView
 from .views.dashboard import DashboardView
 from .views.diagnose import DiagnoseView
@@ -68,6 +69,10 @@ class MainWindow(QMainWindow):
                 color: #33f3ff;
             }
         """)
+
+        self.logo_btn.setIcon(create_app_icon())
+        self.logo_btn.setIconSize(QSize(30, 30))
+
         self.logo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
         tagline = QLabel("SORT IT OUT  •  NETENGINE")

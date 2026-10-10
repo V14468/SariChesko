@@ -1,3 +1,4 @@
+import os
 import subprocess
 import shutil
 import sys
@@ -7,6 +8,21 @@ from ..base import TrafficControllerBase, ConfigSnapshot, ApplyResult
 
 
 POLICY_PREFIX = "SariChesko_"
+
+def _app_launch_command(frozen=None, executable=None) -> list[str]:
+    """Command line that starts SariChesko again: the packaged .exe itself,
+    or `python -m sarichesko.app` when running from source."""
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    executable = sys.executable if executable is None else executable
+    return [executable] if frozen else [executable, "-m", "sarichesko.app"]
+
+
+def _shell_execute_runas(exe: str, params: str, cwd: str) -> int:
+    """Ask Windows to start `exe` elevated (this is what raises the UAC
+    prompt). Returns the ShellExecuteW result code: > 32 means the request
+    was accepted. Isolated so tests can replace it."""
+    import ctypes
+    return int(ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, cwd, 1))
 
 # Windows' built-in QoS Packet Scheduler (NetQosPolicy) exposes exactly one
 # shaping primitive -- ThrottleRateActionBitsPerSecond -- and no public API
@@ -65,6 +81,30 @@ class WindowsTrafficController(TrafficControllerBase):
         # Writing to the live (ActiveStore) QoS policy store changes system
         # network configuration and requires an elevated (Administrator) shell.
         return True
+
+    def can_relaunch_elevated(self) -> bool:
+        return sys.platform == "win32"
+
+    def relaunch_elevated(self) -> ApplyResult:
+        """Restart SariChesko as Administrator via the standard Windows UAC
+        prompt. Nothing is elevated silently: Windows itself asks the user to
+        approve, and declining leaves this instance running untouched."""
+        if sys.platform != "win32":
+            return ApplyResult(success=False, message="Elevated restart is only available on Windows.")
+        if self.is_elevated():
+            return ApplyResult(success=False, message="SariChesko is already running as Administrator.")
+        cmd = _app_launch_command()
+        try:
+            rc = _shell_execute_runas(cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd())
+        except Exception as e:
+            return ApplyResult(success=False, message=f"Could not request elevation: {e}")
+        if rc > 32:
+            return ApplyResult(success=True, message="Restarting as Administrator...")
+        return ApplyResult(
+            success=False,
+            message="Administrator access was not granted (the prompt was cancelled or denied). "
+                    "SariChesko is still running normally.",
+        )
 
     def is_elevated(self) -> bool:
         """Check if running as Administrator on Windows.  Fail-safe: returns

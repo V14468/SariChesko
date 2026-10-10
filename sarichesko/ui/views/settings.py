@@ -4,7 +4,7 @@ import time
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QComboBox, QGraphicsOpacityEffect, QScrollArea,
-    QMessageBox,
+    QMessageBox, QApplication,
 )
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 
@@ -106,9 +106,38 @@ class SettingsView(QWidget):
 
         priv_layout.addWidget(_body_label(
             "Only applying real network fixes requires elevation. Diagnostics, "
-            "simulation, algorithm comparison, and monitoring never need it.",
+             "simulation, algorithm comparison, and monitoring never need it.",
             "#64748b",
         ))
+
+        # Elevation can't be switched on inside a running process -- the OS only
+        # allows starting a NEW elevated copy -- so this is a restart, and it is
+        # always user-initiated and confirmed (Windows also shows its own UAC prompt).
+        self._priv_msg = _body_label("", "#f59e0b")
+        self._priv_msg.setVisible(False)
+        self._btn_elevate = QPushButton("Restart as Administrator")
+        self._btn_elevate.setObjectName("primary_btn")
+        self._btn_elevate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_elevate.setFixedHeight(34)
+        self._btn_elevate.clicked.connect(self._on_restart_elevated)
+
+        if elevated:
+            priv_layout.addWidget(_body_label(
+                "Elevation is on for this session. It can't be switched off in place \u2014 "
+                "close SariChesko and open it normally to run without it.",
+                "#64748b",
+            ))
+        elif self._controller.can_relaunch_elevated():
+            elev_row = QHBoxLayout()
+            elev_row.addWidget(self._btn_elevate)
+            elev_row.addStretch()
+            priv_layout.addLayout(elev_row)
+        else:
+            priv_layout.addWidget(_body_label(
+                self._controller.relaunch_elevated().message, "#64748b",
+            ))
+            self._btn_elevate.setVisible(False)
+        priv_layout.addWidget(self._priv_msg)
         layout.addWidget(priv_card)
 
         # ── Card 2: Preferences ───────────────────────────────────────
@@ -290,6 +319,26 @@ class SettingsView(QWidget):
             except Exception:
                 pass
 
+    def _on_restart_elevated(self):
+        reply = QMessageBox.question(
+            self, "Restart as Administrator?",
+            "SariChesko will close and reopen with Administrator rights so it can apply "
+            "network fixes. Windows will ask you to confirm. Your history, baselines and "
+            "settings are kept.\n\nContinue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        result = self._controller.relaunch_elevated()
+        self._priv_msg.setStyleSheet(
+            f"font-size: 13px; color: {'#00e5a3' if result.success else '#f59e0b'};"
+        )
+        self._priv_msg.setText(result.message)
+        self._priv_msg.setVisible(True)
+        if result.success:
+            QApplication.quit()
+    
     def _clear_history(self):
         reply = QMessageBox.question(
             self, "Clear History",

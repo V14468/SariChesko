@@ -95,6 +95,24 @@ class TrafficControllerBase(ABC):
         """Check whether *algorithm* is natively supported on this platform."""
         return algorithm in self.SUPPORTED_ALGORITHMS
 
+    def can_relaunch_elevated(self) -> bool:
+        """Whether SariChesko can restart itself with elevated privileges on
+        this OS. A running process cannot raise its own privileges in place;
+        the only way is to start a new, elevated copy. Default: not supported
+        (concrete, not abstract, so existing controllers keep working)."""
+        return False
+    
+    def relaunch_elevated(self) -> ApplyResult:
+        """Start an elevated copy of SariChesko. success=True means the OS
+        accepted the request and the caller should now close this instance;
+        success=False carries a human-readable reason and nothing changed."""
+        return ApplyResult(
+            success=False,
+            message=("Restarting with elevated privileges isn't automated on this "
+                     "platform yet. Close SariChesko and start it again with "
+                     "root/Administrator privileges, then retry the fix."),
+        )
+
     @abstractmethod
     def save_snapshot(self, iface: str) -> ConfigSnapshot: ...
 
