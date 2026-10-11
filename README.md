@@ -12,6 +12,27 @@ An open-source, cross-platform systems utility and network instrumentation testb
 
 ---
 
+## Download
+
+[![Latest release](https://img.shields.io/github/v/release/V14468/SariChesko?style=for-the-badge&label=Download&color=00c8d4)](https://github.com/V14468/SariChesko/releases/latest)
+
+**Windows 10/11 (64-bit). No Python, no installer, no admin rights needed.**
+
+| File | What it is |
+| :-- | :-- |
+| [**SariChesko.exe**](https://github.com/V14468/SariChesko/releases/latest/download/SariChesko.exe) | Single file. Easiest to share; starts a few seconds slower because it unpacks itself on launch. |
+| [SariChesko-windows-folder.zip](https://github.com/V14468/SariChesko/releases/latest/download/SariChesko-windows-folder.zip) | Unzip anywhere and run `SariChesko.exe` inside. Starts faster, fewer antivirus false alarms. |
+| [SHA256SUMS.txt](https://github.com/V14468/SariChesko/releases/latest/download/SHA256SUMS.txt) | Checksums to verify your download. |
+
+1. Download a file above and run it (for the zip: right-click → **Extract All** first).
+2. Windows may show **"Windows protected your PC"** because the app isn't code-signed. Click **More info → Run anyway**.
+3. To apply real network fixes, use **Settings → Restart as Administrator**. Diagnosis, simulation and reports never need it.
+4. Optional check: `Get-FileHash .\SariChesko.exe -Algorithm SHA256`, then compare with `SHA256SUMS.txt`.
+
+Linux: run from source for now (see Quick Start).
+
+---
+
 ## Screenshots
 
 | Dashboard | Diagnose &rarr; Recommendation |
@@ -50,7 +71,7 @@ An open-source, cross-platform systems utility and network instrumentation testb
 
 ## Quick Start
 
-### Direct Download (Windows — No Python Required)
+### “See Download above” (Windows — No Python Required)
 
 Pre-built Windows executables are published with each release on the [GitHub Releases](https://github.com/V14468/SariChesko/releases) page:
 
@@ -58,6 +79,12 @@ Pre-built Windows executables are published with each release on the [GitHub Rel
 2. Double-click `SariChesko.exe` to launch the application.
 3. **Windows SmartScreen Note:** As an open-source binary without an enterprise code-signing certificate, Windows SmartScreen may prompt *"Windows protected your PC"*. Click **More info** &rarr; **Run anyway**.
 4. **Privileges & Elevation:** Network monitoring, ISP probing, diagnostics, and algorithm simulations run unprivileged by default. Administrative privileges are only needed when actuating real OS traffic control rules; you can relaunch with privileges anytime via **Settings &rarr; Restart as Administrator**.
+
+### Releasing (maintainers)
+
+1. Bump `__version__` in `sarichesko/__init__.py`, commit and push.
+2. `git tag v1.0.0` then `git push origin v1.0.0`
+3. The **Build & Release Windows** GitHub Action runs the tests, builds both executables, smoke-tests the single-file exe and attaches everything to the release.
 
 ### Run from source (Windows or Linux)
 

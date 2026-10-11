@@ -3,6 +3,7 @@ import os
 
 spec_dir = os.path.abspath(SPECPATH)
 root_dir = os.path.abspath(os.path.join(spec_dir, '..', '..'))
+assets_src = os.path.join(root_dir, 'sarichesko', 'ui', 'assets')
 
 entry_point = os.path.join(root_dir, 'packaging', 'run_sarichesko.py')
 
@@ -10,7 +11,7 @@ a = Analysis(
     [entry_point],
     pathex=[root_dir],
     binaries=[],
-    datas=[],
+    datas=[(assets_src, os.path.join('sarichesko', 'ui', 'assets'))] if os.path.exists(assets_src) else [],
     hiddenimports=[
         'sarichesko',
         'sarichesko.app',
@@ -65,9 +66,7 @@ a = Analysis(
         'sarichesko.ui.widgets.permission_dialog',
         'sarichesko.ui.widgets.rollback_dialog',
         'sarichesko.utils',
-        'sarichesko.utils.elevation',
         'sarichesko.utils.export',
-        'sarichesko.utils.units',
     ],
     hookspath=[],
     hooksconfig={},

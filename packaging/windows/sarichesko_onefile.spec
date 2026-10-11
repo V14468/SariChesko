@@ -8,8 +8,6 @@ entry_point = os.path.join(root_dir, 'packaging', 'run_sarichesko.py')
 
 assets_src = os.path.join(root_dir, 'sarichesko', 'ui', 'assets')
 icon_path = os.path.join(root_dir, 'packaging', 'assets', 'sarichesko.ico')
-if not os.path.exists(icon_path):
-    icon_path = os.path.join(root_dir, 'packaging', 'assests', 'sarichesko.ico')
 
 a = Analysis(
     [entry_point],
@@ -102,7 +100,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
