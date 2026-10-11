@@ -37,6 +37,7 @@ a = Analysis(
         'sarichesko.simulation',
         'sarichesko.simulation.engine_base',
         'sarichesko.simulation.python_sim',
+        'sarichesko.simulation.ns3_bridge',
         'sarichesko.simulation.algo_runners',
         'sarichesko.simulation.algo_runners.codel_sim',
         'sarichesko.simulation.algo_runners.leaky_bucket_sim',
@@ -93,13 +94,16 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='SariChesko',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -107,15 +111,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=icon_path,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='SariChesko',
 )

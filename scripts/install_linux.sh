@@ -40,6 +40,19 @@ case "$response" in
         if [ -f "$DESKTOP_SRC" ]; then
             cp "$DESKTOP_SRC" "$APPS_DIR/"
             echo "Copied $DESKTOP_SRC to $APPS_DIR/"
+            # The .desktop file refers to the icon by name (Icon=sarichesko),
+            # so it has to be installed into the user's icon theme as well.
+            ICON_SRC="$PROJECT_ROOT/packaging/assets/sarichesko.png"
+            ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+            if [ -f "$ICON_SRC" ]; then
+                mkdir -p "$ICON_DIR"
+                cp "$ICON_SRC" "$ICON_DIR/sarichesko.png"
+                echo "Installed icon to $ICON_DIR/"
+                command -v gtk-update-icon-cache >/dev/null 2>&1 && \
+                    gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+            else
+                echo "Warning: $ICON_SRC not found; the menu entry will use a generic icon."
+            fi
         else
             echo "Warning: $DESKTOP_SRC not found, skipping desktop entry installation."
         fi

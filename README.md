@@ -50,6 +50,15 @@ An open-source, cross-platform systems utility and network instrumentation testb
 
 ## Quick Start
 
+### Direct Download (Windows — No Python Required)
+
+Pre-built Windows executables are published with each release on the [GitHub Releases](https://github.com/V14468/SariChesko/releases) page:
+
+1. Download **`SariChesko.exe`** (single-file executable) or **`SariChesko-windows-folder.zip`** (portable folder distribution).
+2. Double-click `SariChesko.exe` to launch the application.
+3. **Windows SmartScreen Note:** As an open-source binary without an enterprise code-signing certificate, Windows SmartScreen may prompt *"Windows protected your PC"*. Click **More info** &rarr; **Run anyway**.
+4. **Privileges & Elevation:** Network monitoring, ISP probing, diagnostics, and algorithm simulations run unprivileged by default. Administrative privileges are only needed when actuating real OS traffic control rules; you can relaunch with privileges anytime via **Settings &rarr; Restart as Administrator**.
+
 ### Run from source (Windows or Linux)
 
 ```bash
@@ -81,7 +90,11 @@ bash scripts/install_linux.sh
 ```bash
 pip install -r requirements-dev.txt
 
-# Windows
+# Windows: Single-file executable
+pyinstaller packaging\windows\sarichesko_onefile.spec --noconfirm
+# -> dist\SariChesko.exe
+
+# Windows: One-folder distribution
 pyinstaller packaging\windows\sarichesko.spec --noconfirm
 # -> dist\SariChesko\SariChesko.exe
 
@@ -90,8 +103,7 @@ pyinstaller packaging/linux/sarichesko.spec --noconfirm
 # -> dist/sarichesko/sarichesko
 ```
 
-The build produces a one-folder distribution — copy the entire `dist/SariChesko/` (or
-`dist/sarichesko/`) folder to deploy; it runs standalone on a machine with no Python installed.
+The Windows builds produce either a standalone single file (`dist\SariChesko.exe`) or a folder (`dist\SariChesko\`). Both run self-contained on machines with no Python installed.
 
 ### Run the test suite
 
@@ -314,7 +326,7 @@ SariChesko organizes its diagnostic and simulation workflow across modular views
 * **Compare Algorithms:** Side-by-side benchmarking of Leaky Bucket, Token Bucket, RED, and CoDel across standardized metrics.
 * **History:** Chronological audit trail of past diagnostic runs, baseline updates, and applied traffic policies.
 * **Reports:** Evidence brief generator that compiles historical diagnostics, applied fixes (with before/after scores and rollback status), simulation proof, and an evidence ledger into structured Markdown (`.md`) briefs exportable to disk.
-* **Settings:** Configuration center displaying live privilege/elevation status (`is_elevated`), default network interface preferences, configurable congestion detection sensitivity (Conservative `0.75`, Balanced `1.0`, Aggressive `1.5`), and local SQLite data management (history purge and baseline reset with confirmation dialogs).
+* **Settings:** Configuration center displaying live privilege/elevation status (is_elevated) with a **Restart as Administrator** button on Windows, default network, default network interface preferences, configurable congestion detection sensitivity (Conservative `0.75`, Balanced `1.0`, Aggressive `1.5`), and local SQLite data management (history purge and baseline reset with confirmation dialogs).
 
 ---
 
@@ -338,7 +350,7 @@ SariChesko organizes its diagnostic and simulation workflow across modular views
 Given that modifying network parameters can compromise host connectivity, SariChesko implements strict defensive invariants:
 
 1. **Explicit Human-in-the-Loop Authorization:** The application never silently mutates operating system configurations. Every policy change requires explicit confirmation through a structured modal dialog detailing the exact command and parameters.
-2. **Principle of Least Privilege:** SariChesko does not execute with permanent administrative/root privileges. Elevated access is requested transiently through native elevation prompts (`sudo` / UAC) only at the moment of actuation.
+2. **Principle of Least Privilege:** SariChesko runs unprivileged by default; diagnosis, simulation, comparison and monitoring never need elevation. Only applying a real fix does. A running process cannot raise its own privileges, so elevation is a user-initiated restart: on Windows, **Settings → Restart as Administrator** (Windows shows its own UAC prompt, and declining changes nothing). On Linux, start SariChesko with root privileges yourself (automatic restart is not implemented yet). Even when elevated, no fix is applied without explicit approval in the permission dialog.
 3. **Pre-Flight State Snapshotting:** The exact operational state of network interfaces and existing queuing disciplines is serialized prior to any mutation.
 4. **Closed-Loop Empirical Verification:** After applying a policy, the system re-measures link performance via a dedicated ~5-second diagnostic pass (10 samples at 0.5-second intervals plus reachability checks), evaluating latency, jitter, and packet loss against the pre-intervention baseline.
 5. **Deterministic One-Click Rollback:** If the post-intervention state exhibits regression or fails to resolve the bottleneck, the user is prompted to restore the initial configuration with a single click.

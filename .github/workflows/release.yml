@@ -1,0 +1,83 @@
+name: Build & Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests/ -q
+
+      - name: Build single-file exe
+        run: pyinstaller packaging\windows\sarichesko_onefile.spec --noconfirm
+
+      - name: Build folder distribution
+        run: pyinstaller packaging\windows\sarichesko.spec --noconfirm
+
+      - name: Smoke-test single-file exe (must stay alive 10 s)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $proc = Start-Process -FilePath "dist\SariChesko.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) {
+            Write-Error "SariChesko.exe exited prematurely with code $($proc.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $proc.Id -Force
+
+      - name: Zip folder distribution
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\SariChesko\*" -DestinationPath "SariChesko-windows-folder.zip"
+
+      - name: Generate SHA256SUMS
+        shell: pwsh
+        run: |
+          $exe_hash   = (Get-FileHash "dist\SariChesko.exe" -Algorithm SHA256).Hash
+          $zip_hash   = (Get-FileHash "SariChesko-windows-folder.zip" -Algorithm SHA256).Hash
+          @(
+            "$exe_hash  SariChesko.exe",
+            "$zip_hash  SariChesko-windows-folder.zip"
+          ) | Set-Content -Path "SHA256SUMS.txt"
+          Get-Content "SHA256SUMS.txt"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SariChesko-windows
+          path: |
+            dist/SariChesko.exe
+            SariChesko-windows-folder.zip
+            SHA256SUMS.txt
+
+      - name: Attach to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/SariChesko.exe
+            SariChesko-windows-folder.zip
+            SHA256SUMS.txt

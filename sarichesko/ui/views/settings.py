@@ -216,7 +216,8 @@ class SettingsView(QWidget):
         about_layout.setSpacing(6)
         about_layout.addWidget(_section_title("ABOUT"))
 
-        about_layout.addWidget(_body_label("SariChesko v1.0", "#00f0ff"))
+        from sarichesko import __version__
+        about_layout.addWidget(_body_label(f"SariChesko v{__version__}", "#00f0ff"))
 
         import PySide6
         about_layout.addWidget(_body_label(

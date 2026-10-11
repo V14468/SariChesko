@@ -46,7 +46,9 @@ coverage.xml
 .venv
 env/
 venv/
+venv*/
 ENV/
+.kilo/
 
 # Database files
 *.db
