@@ -1,6 +1,6 @@
 import platform
 import sys
-import time
+from typing import Callable, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QComboBox, QGraphicsOpacityEffect, QScrollArea,
@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from ...platform import get_monitor, get_controller
 from ...storage.db import get_connection, get_db_path, init_db
 from ...storage.repository import Repository
+from ..theme import theme_manager, Palette, style
 
 
 SENSITIVITY_OPTIONS = [
@@ -29,36 +30,41 @@ def _card() -> QFrame:
 
 def _section_title(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet(
-        "font-size: 11px; font-weight: 700; color: #64748b; "
-        "letter-spacing: 0.8px; text-transform: uppercase;"
+    style(
+        lbl,
+        lambda p: (
+            f"font-size: 11px; font-weight: 700; color: {p.text_muted}; "
+            "letter-spacing: 0.8px; text-transform: uppercase;"
+        ),
     )
     return lbl
 
 
-def _body_label(text: str, color: str = "#e2e8f0") -> QLabel:
+def _body_label(text: str, color_fn: Optional[Callable[[Palette], str]] = None) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet(f"font-size: 13px; color: {color};")
+    if color_fn is None:
+        color_fn = lambda p: p.text
+    style(lbl, lambda p: f"font-size: 13px; color: {color_fn(p)};")
     lbl.setWordWrap(True)
     return lbl
 
 
-def _action_button(text: str, accent: str = "#00f0ff") -> QPushButton:
+def _action_button(text: str, color_fn: Callable[[Palette], str]) -> QPushButton:
     btn = QPushButton(text)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedHeight(34)
-    btn.setStyleSheet(f"""
+    style(btn, lambda p: f"""
         QPushButton {{
-            background-color: #080a10;
-            color: {accent};
-            border: 1px solid {accent};
+            background-color: {p.surface};
+            color: {color_fn(p)};
+            border: 1px solid {color_fn(p)};
             border-radius: 8px;
             padding: 6px 18px;
             font-size: 12px;
             font-weight: 700;
         }}
         QPushButton:hover {{
-            background-color: #0c1424;
+            background-color: {p.selection};
         }}
     """)
     return btn
@@ -73,7 +79,7 @@ class SettingsView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -82,9 +88,9 @@ class SettingsView(QWidget):
 
         # Page header
         title = QLabel("Settings")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Preferences, privilege status, local data, and about")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
@@ -100,20 +106,19 @@ class SettingsView(QWidget):
             status_text = f"Running as Administrator: {'Yes' if elevated else 'No'}"
         else:
             status_text = f"Running as root: {'Yes' if elevated else 'No'}"
-        status_color = "#00e5a3" if elevated else "#f59e0b"
-        self._priv_status = _body_label(status_text, status_color)
+        self._priv_status = _body_label(
+            status_text,
+            lambda p: p.success if elevated else p.warning,
+        )
         priv_layout.addWidget(self._priv_status)
 
         priv_layout.addWidget(_body_label(
             "Only applying real network fixes requires elevation. Diagnostics, "
-             "simulation, algorithm comparison, and monitoring never need it.",
-            "#64748b",
+            "simulation, algorithm comparison, and monitoring never need it.",
+            lambda p: p.text_muted,
         ))
 
-        # Elevation can't be switched on inside a running process -- the OS only
-        # allows starting a NEW elevated copy -- so this is a restart, and it is
-        # always user-initiated and confirmed (Windows also shows its own UAC prompt).
-        self._priv_msg = _body_label("", "#f59e0b")
+        self._priv_msg = _body_label("", lambda p: p.warning)
         self._priv_msg.setVisible(False)
         self._btn_elevate = QPushButton("Restart as Administrator")
         self._btn_elevate.setObjectName("primary_btn")
@@ -125,7 +130,7 @@ class SettingsView(QWidget):
             priv_layout.addWidget(_body_label(
                 "Elevation is on for this session. It can't be switched off in place \u2014 "
                 "close SariChesko and open it normally to run without it.",
-                "#64748b",
+                lambda p: p.text_muted,
             ))
         elif self._controller.can_relaunch_elevated():
             elev_row = QHBoxLayout()
@@ -134,13 +139,35 @@ class SettingsView(QWidget):
             priv_layout.addLayout(elev_row)
         else:
             priv_layout.addWidget(_body_label(
-                self._controller.relaunch_elevated().message, "#64748b",
+                self._controller.relaunch_elevated().message,
+                lambda p: p.text_muted,
             ))
             self._btn_elevate.setVisible(False)
         priv_layout.addWidget(self._priv_msg)
         layout.addWidget(priv_card)
 
-        # ── Card 2: Preferences ───────────────────────────────────────
+        # ── Card 2: Appearance ────────────────────────────────────────
+        app_card = _card()
+        app_layout = QVBoxLayout(app_card)
+        app_layout.setContentsMargins(20, 16, 20, 16)
+        app_layout.setSpacing(10)
+        app_layout.addWidget(_section_title("APPEARANCE"))
+
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(_body_label("Theme"))
+        self._theme_combo = QComboBox()
+        self._theme_combo.setFixedWidth(220)
+        self._theme_combo.setFixedHeight(32)
+        self._theme_combo.addItem("Dark (default)", "dark")
+        self._theme_combo.addItem("Light", "light")
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        theme_row.addStretch()
+        theme_row.addWidget(self._theme_combo)
+        app_layout.addLayout(theme_row)
+
+        layout.addWidget(app_card)
+
+        # ── Card 3: Preferences ───────────────────────────────────────
         pref_card = _card()
         pref_layout = QVBoxLayout(pref_card)
         pref_layout.setContentsMargins(20, 16, 20, 16)
@@ -183,25 +210,25 @@ class SettingsView(QWidget):
 
         layout.addWidget(pref_card)
 
-        # ── Card 3: Local Data ────────────────────────────────────────
+        # ── Card 4: Local Data ────────────────────────────────────────
         data_card = _card()
         data_layout = QVBoxLayout(data_card)
         data_layout.setContentsMargins(20, 16, 20, 16)
         data_layout.setSpacing(10)
         data_layout.addWidget(_section_title("LOCAL DATA"))
 
-        self._db_path_label = _body_label(f"Database: {get_db_path()}", "#94a3b8")
+        self._db_path_label = _body_label(f"Database: {get_db_path()}", lambda p: p.text_secondary)
         data_layout.addWidget(self._db_path_label)
 
-        self._counts_label = _body_label("", "#94a3b8")
+        self._counts_label = _body_label("", lambda p: p.text_secondary)
         data_layout.addWidget(self._counts_label)
 
         btn_row = QHBoxLayout()
-        self._btn_clear_history = _action_button("Clear History", "#f59e0b")
+        self._btn_clear_history = _action_button("Clear History", lambda p: p.warning)
         self._btn_clear_history.clicked.connect(self._clear_history)
         btn_row.addWidget(self._btn_clear_history)
 
-        self._btn_reset_baselines = _action_button("Reset Baselines", "#ef4444")
+        self._btn_reset_baselines = _action_button("Reset Baselines", lambda p: p.danger)
         self._btn_reset_baselines.clicked.connect(self._clear_baselines)
         btn_row.addWidget(self._btn_reset_baselines)
         btn_row.addStretch()
@@ -209,7 +236,7 @@ class SettingsView(QWidget):
 
         layout.addWidget(data_card)
 
-        # ── Card 4: About ─────────────────────────────────────────────
+        # ── Card 5: About ─────────────────────────────────────────────
         about_card = _card()
         about_layout = QVBoxLayout(about_card)
         about_layout.setContentsMargins(20, 16, 20, 16)
@@ -217,14 +244,14 @@ class SettingsView(QWidget):
         about_layout.addWidget(_section_title("ABOUT"))
 
         from sarichesko import __version__
-        about_layout.addWidget(_body_label(f"SariChesko v{__version__}", "#00f0ff"))
+        about_layout.addWidget(_body_label(f"SariChesko v{__version__}", lambda p: p.accent))
 
         import PySide6
         about_layout.addWidget(_body_label(
             f"OS: {platform.system()} {platform.release()}\n"
             f"Python: {platform.python_version()}\n"
             f"PySide6: {PySide6.__version__}",
-            "#94a3b8",
+            lambda p: p.text_secondary,
         ))
         layout.addWidget(about_card)
 
@@ -281,6 +308,15 @@ class SettingsView(QWidget):
                     self._sens_combo.blockSignals(False)
                     break
 
+            # Theme
+            saved_theme = repo.get_setting("theme", theme_manager.name)
+            for i in range(self._theme_combo.count()):
+                if self._theme_combo.itemData(i) == saved_theme:
+                    self._theme_combo.blockSignals(True)
+                    self._theme_combo.setCurrentIndex(i)
+                    self._theme_combo.blockSignals(False)
+                    break
+
             # Data counts
             counts = repo.get_history_counts()
             self._counts_label.setText(
@@ -295,6 +331,11 @@ class SettingsView(QWidget):
             conn.close()
         except Exception:
             pass
+
+    def _on_theme_changed(self, index: int):
+        theme_name = self._theme_combo.itemData(index)
+        if theme_name:
+            theme_manager.set_theme(theme_name, persist=True)
 
     def _on_default_iface_changed(self, index: int):
         iface_name = self._iface_combo.itemData(index)
@@ -332,14 +373,14 @@ class SettingsView(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         result = self._controller.relaunch_elevated()
-        self._priv_msg.setStyleSheet(
-            f"font-size: 13px; color: {'#00e5a3' if result.success else '#f59e0b'};"
-        )
+        p = theme_manager.palette
+        color = p.success if result.success else p.warning
+        self._priv_msg.setStyleSheet(f"font-size: 13px; color: {color};")
         self._priv_msg.setText(result.message)
         self._priv_msg.setVisible(True)
         if result.success:
             QApplication.quit()
-    
+
     def _clear_history(self):
         reply = QMessageBox.question(
             self, "Clear History",

@@ -1,24 +1,45 @@
-from typing import Optional
+from typing import Optional, Union, Callable
 from collections import deque
-from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QColor, QPen, QPainterPath, QLinearGradient, QBrush, QFont
+
+from ..theme import theme_manager, Palette, DARK
 
 
 class LatencyChartWidget(QWidget):
     """Real-time scrolling line chart for latency, loss, jitter, or bandwidth."""
 
     def __init__(self, title: str = "Latency", unit: str = "ms",
-                 color: str = "#00f0ff", max_points: int = 120, parent=None):
+                 color_token: Union[str, Callable[[Palette], str]] = "accent",
+                 max_points: int = 120, parent=None):
         super().__init__(parent)
         self._title = title
         self._unit = unit
-        self._color = QColor(color)
+        self._color_token = color_token
         self._max_points = max_points
         self._data: deque[Optional[float]] = deque(maxlen=max_points)
         self._min_val = 0.0
         self._max_val = 1.0
         self.setMinimumHeight(160)
+        theme_manager.changed.connect(lambda _: self.update())
+
+    def _resolve_color(self, p: Palette) -> QColor:
+        if callable(self._color_token):
+            return QColor(self._color_token(p))
+        if hasattr(p, self._color_token):
+            return QColor(getattr(p, self._color_token))
+        # Backward-compatibility fallback for legacy hex strings
+        legacy_map = {
+            DARK.accent: p.accent,
+            DARK.purple: p.purple,
+            DARK.warning: p.warning,
+            DARK.danger: p.danger,
+            DARK.success: p.success,
+        }
+        if self._color_token in legacy_map:
+            return QColor(legacy_map[self._color_token])
+        return QColor(self._color_token)
 
     def add_value(self, value: Optional[float]):
         self._data.append(value)
@@ -34,6 +55,7 @@ class LatencyChartWidget(QWidget):
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            palette = theme_manager.palette
 
             w, h = self.width(), self.height()
             margin_top = 30
@@ -44,22 +66,25 @@ class LatencyChartWidget(QWidget):
             chart_h = h - margin_top - margin_bottom
 
             # Background
-            p.fillRect(self.rect(), QColor(5, 6, 10))
+            p.fillRect(self.rect(), QColor(palette.surface_alt))
 
             # Chart area border
-            p.setPen(QPen(QColor(20, 24, 40), 1))
+            p.setPen(QPen(QColor(palette.chart_grid), 1))
             p.drawRect(margin_left, margin_top, chart_w, chart_h)
 
             # Title
-            p.setPen(QColor(100, 116, 139))
+            p.setPen(QColor(palette.text_muted))
             font = QFont("Segoe UI", 10, QFont.Weight.Bold)
             p.setFont(font)
             p.drawText(margin_left, 18, f"{self._title} ({self._unit})")
 
+            # Series color
+            series_color = self._resolve_color(palette)
+
             # Current value
             if self._data:
                 cur = self._data[-1]
-                p.setPen(self._color)
+                p.setPen(series_color)
                 font_val = QFont("Segoe UI", 10, QFont.Weight.Bold)
                 p.setFont(font_val)
                 if cur is not None:
@@ -69,24 +94,24 @@ class LatencyChartWidget(QWidget):
 
             valid_count = sum(1 for v in self._data if v is not None)
             if valid_count < 2:
-                p.setPen(QColor(71, 85, 105))
+                p.setPen(QColor(palette.text_faint))
                 p.setFont(QFont("Segoe UI", 9))
                 p.drawText(margin_left, margin_top, chart_w, chart_h,
                            Qt.AlignmentFlag.AlignCenter, "Waiting for data...")
                 return
 
             # Grid lines
-            p.setPen(QPen(QColor(20, 24, 40), 0.5))
+            p.setPen(QPen(QColor(palette.chart_grid), 0.5))
             grid_count = 4
             for i in range(1, grid_count):
                 gy = margin_top + (chart_h / grid_count) * i
                 p.drawLine(margin_left, int(gy), margin_left + chart_w, int(gy))
 
                 val = self._max_val - (self._max_val - self._min_val) * (i / grid_count)
-                p.setPen(QColor(71, 85, 105))
+                p.setPen(QColor(palette.text_faint))
                 p.setFont(QFont("Segoe UI", 8))
                 p.drawText(4, int(gy) + 4, f"{val:.0f}")
-                p.setPen(QPen(QColor(20, 24, 40), 0.5))
+                p.setPen(QPen(QColor(palette.chart_grid), 0.5))
 
             # Build line path
             data = list(self._data)
@@ -128,7 +153,7 @@ class LatencyChartWidget(QWidget):
 
             # Fill gradient under line
             grad = QLinearGradient(0, margin_top, 0, margin_top + chart_h)
-            fill_color = QColor(self._color)
+            fill_color = QColor(series_color)
             fill_color.setAlpha(40)
             grad.setColorAt(0.0, fill_color)
             fill_color.setAlpha(0)
@@ -138,7 +163,7 @@ class LatencyChartWidget(QWidget):
             p.drawPath(fill)
 
             # Draw line
-            p.setPen(QPen(self._color, 1.8))
+            p.setPen(QPen(series_color, 1.8))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(line)
         finally:

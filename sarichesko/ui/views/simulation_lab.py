@@ -1,6 +1,7 @@
 import time
 import uuid
 import json
+from typing import Callable, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QComboBox, QProgressBar, QGraphicsOpacityEffect,
@@ -9,20 +10,22 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
 
 from ..widgets.latency_chart import LatencyChartWidget
+from ..widgets.engine_selector import EngineSelector
 from ...simulation.engine_base import SimConfig, AlgorithmType, SimulationResult
-from ...simulation.python_sim import PythonSimulationEngine
 from ...simulation.scenarios.base_scenario import SCENARIOS
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
 from ...storage.models import SimulationResult as SimResultModel
+from ..theme import theme_manager, Palette, style
 
 
-ALGO_COLORS = {
-    AlgorithmType.LEAKY_BUCKET: "#00f0ff",
-    AlgorithmType.TOKEN_BUCKET: "#a78bfa",
-    AlgorithmType.RED: "#f59e0b",
-    AlgorithmType.CODEL: "#00e5a3",
-}
+def algo_colors(p: Palette) -> dict:
+    return {
+        AlgorithmType.LEAKY_BUCKET: p.accent,
+        AlgorithmType.TOKEN_BUCKET: p.purple,
+        AlgorithmType.RED: p.warning,
+        AlgorithmType.CODEL: p.success,
+    }
 
 
 class SimWorker(QThread):
@@ -30,23 +33,23 @@ class SimWorker(QThread):
     complete = Signal(object)
     error = Signal(str)
 
-    def __init__(self, config: SimConfig):
+    def __init__(self, config: SimConfig, engine):
         super().__init__()
         self._config = config
+        self._engine = engine
 
     def run(self):
         try:
             self.progress.emit("Initializing simulation engine...", 10)
-            engine = PythonSimulationEngine()
             self.progress.emit(f"Running {self._config.scenario} with {self._config.algorithm.value}...", 30)
-            result = engine.run(self._config)
+            result = self._engine.run(self._config)
             self.progress.emit("Simulation complete!", 100)
             self.complete.emit(result)
         except Exception as e:
             self.error.emit(str(e))
 
 
-def _metric_card(label: str, unit: str, color: str) -> tuple[QFrame, QLabel]:
+def _metric_card(label: str, unit: str, color_fn: Callable[[Palette], str]) -> tuple[QFrame, QLabel]:
     card = QFrame()
     card.setObjectName("card")
     card.setMinimumHeight(100)
@@ -55,17 +58,17 @@ def _metric_card(label: str, unit: str, color: str) -> tuple[QFrame, QLabel]:
     cl.setSpacing(6)
 
     lbl = QLabel(label)
-    lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+    style(lbl, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
 
     val_row = QHBoxLayout()
     val_row.setSpacing(4)
     val_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBaseline)
 
     val = QLabel("—")
-    val.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {color};")
+    style(val, lambda p: f"font-size: 26px; font-weight: 800; color: {color_fn(p)};")
 
     ulbl = QLabel(unit)
-    ulbl.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {color}; padding-top: 8px;")
+    style(ulbl, lambda p: f"font-size: 12px; font-weight: 600; color: {color_fn(p)}; padding-top: 8px;")
 
     val_row.addWidget(val)
     val_row.addWidget(ulbl)
@@ -78,13 +81,13 @@ def _metric_card(label: str, unit: str, color: str) -> tuple[QFrame, QLabel]:
 class SimulationLabView(QWidget):
     def __init__(self):
         super().__init__()
-        self._worker: SimWorker = None
-        self._last_result: SimulationResult = None
+        self._worker: Optional[SimWorker] = None
+        self._last_result: Optional[SimulationResult] = None
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -93,9 +96,9 @@ class SimulationLabView(QWidget):
 
         # Header
         title = QLabel("Simulation Lab")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Safe sandbox — test congestion algorithms on synthetic traffic without touching your real network")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(4)
@@ -108,12 +111,12 @@ class SimulationLabView(QWidget):
         config_layout.setSpacing(16)
 
         config_title = QLabel("SIMULATION PARAMETERS")
-        config_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(config_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         config_layout.addWidget(config_title)
 
         # Scenario description
         self._scenario_desc = QLabel("")
-        self._scenario_desc.setStyleSheet("font-size: 12px; color: #475569;")
+        style(self._scenario_desc, lambda p: f"font-size: 12px; color: {p.text_faint};")
         self._scenario_desc.setWordWrap(True)
 
         params_row = QHBoxLayout()
@@ -123,7 +126,7 @@ class SimulationLabView(QWidget):
         scen_col = QVBoxLayout()
         scen_col.setSpacing(4)
         lbl_s = QLabel("Scenario")
-        lbl_s.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_s, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         scen_col.addWidget(lbl_s)
         self._scenario_combo = QComboBox()
         self._scenario_combo.setFixedHeight(36)
@@ -138,7 +141,7 @@ class SimulationLabView(QWidget):
         algo_col = QVBoxLayout()
         algo_col.setSpacing(4)
         lbl_a = QLabel("Algorithm")
-        lbl_a.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_a, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         algo_col.addWidget(lbl_a)
         self._algo_combo = QComboBox()
         self._algo_combo.setFixedHeight(36)
@@ -152,7 +155,7 @@ class SimulationLabView(QWidget):
         dur_col = QVBoxLayout()
         dur_col.setSpacing(4)
         lbl_d = QLabel("Duration (s)")
-        lbl_d.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_d, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         dur_col.addWidget(lbl_d)
         self._duration_spin = QSpinBox()
         self._duration_spin.setRange(1, 30)
@@ -165,7 +168,7 @@ class SimulationLabView(QWidget):
         bw_col = QVBoxLayout()
         bw_col.setSpacing(4)
         lbl_b = QLabel("Link (Mbps)")
-        lbl_b.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_b, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         bw_col.addWidget(lbl_b)
         self._bw_spin = QSpinBox()
         self._bw_spin.setRange(1, 1000)
@@ -178,7 +181,7 @@ class SimulationLabView(QWidget):
         qs_col = QVBoxLayout()
         qs_col.setSpacing(4)
         lbl_q = QLabel("Queue Size")
-        lbl_q.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_q, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         qs_col.addWidget(lbl_q)
         self._queue_spin = QSpinBox()
         self._queue_spin.setRange(10, 1000)
@@ -189,6 +192,10 @@ class SimulationLabView(QWidget):
 
         config_layout.addLayout(params_row)
         config_layout.addWidget(self._scenario_desc)
+
+        # Engine selector
+        self._engine_selector = EngineSelector()
+        config_layout.addWidget(self._engine_selector)
 
         # Run button
         btn_row = QHBoxLayout()
@@ -213,15 +220,15 @@ class SimulationLabView(QWidget):
         prog_layout.setSpacing(8)
 
         self._progress_label = QLabel("")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #94a3b8;")
+        style(self._progress_label, lambda p: f"font-size: 13px; font-weight: 600; color: {p.text_secondary};")
         prog_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setFixedHeight(4)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet("""
-            QProgressBar { background-color: #121420; border: none; border-radius: 2px; }
-            QProgressBar::chunk { background-color: #a78bfa; border-radius: 2px; }
+        style(self._progress_bar, lambda p: f"""
+            QProgressBar {{ background-color: {p.track}; border: none; border-radius: 2px; }}
+            QProgressBar::chunk {{ background-color: {p.purple}; border-radius: 2px; }}
         """)
         prog_layout.addWidget(self._progress_bar)
         layout.addWidget(self._progress_frame)
@@ -235,7 +242,7 @@ class SimulationLabView(QWidget):
 
         # Result header with algo name
         self._result_header = QLabel("")
-        self._result_header.setStyleSheet("font-size: 16px; font-weight: 700; color: #ffffff;")
+        style(self._result_header, lambda p: f"font-size: 16px; font-weight: 700; color: {p.text_strong};")
         results_layout.addWidget(self._result_header)
 
         # Metrics row
@@ -243,17 +250,17 @@ class SimulationLabView(QWidget):
         metrics_grid.setSpacing(12)
         self._metric_values = {}
 
-        metrics_info = [
-            ("throughput", "THROUGHPUT", "Mbps", "#00f0ff"),
-            ("avg_latency", "AVG LATENCY", "ms", "#a78bfa"),
-            ("loss", "PACKET LOSS", "%", "#ef4444"),
-            ("fairness", "FAIRNESS", "", "#00e5a3"),
-            ("total_pkts", "TOTAL PKTS", "", "#ffffff"),
-            ("dropped", "DROPPED", "", "#f59e0b"),
+        metrics_info: list[tuple[str, str, str, Callable[[Palette], str]]] = [
+            ("throughput", "THROUGHPUT", "Mbps", lambda p: p.accent),
+            ("avg_latency", "AVG LATENCY", "ms", lambda p: p.purple),
+            ("loss", "PACKET LOSS", "%", lambda p: p.danger),
+            ("fairness", "FAIRNESS", "", lambda p: p.success),
+            ("total_pkts", "TOTAL PKTS", "", lambda p: p.text_strong),
+            ("dropped", "DROPPED", "", lambda p: p.warning),
         ]
 
-        for i, (key, label, unit, color) in enumerate(metrics_info):
-            card, val = _metric_card(label, unit, color)
+        for i, (key, label, unit, col_fn) in enumerate(metrics_info):
+            card, val = _metric_card(label, unit, col_fn)
             metrics_grid.addWidget(card, 0, i)
             self._metric_values[key] = val
 
@@ -263,9 +270,9 @@ class SimulationLabView(QWidget):
         charts_row = QHBoxLayout()
         charts_row.setSpacing(12)
 
-        self._latency_chart = LatencyChartWidget("Packet Latency", "ms", "#a78bfa", max_points=500)
+        self._latency_chart = LatencyChartWidget("Packet Latency", "ms", "purple", max_points=500)
         self._latency_chart.setMinimumHeight(200)
-        self._queue_chart = LatencyChartWidget("Queue Depth", "pkts", "#f59e0b", max_points=500)
+        self._queue_chart = LatencyChartWidget("Queue Depth", "pkts", "warning", max_points=500)
         self._queue_chart.setMinimumHeight(200)
 
         charts_row.addWidget(self._latency_chart)
@@ -273,7 +280,7 @@ class SimulationLabView(QWidget):
         results_layout.addLayout(charts_row)
 
         self._engine_label = QLabel("")
-        self._engine_label.setStyleSheet("font-size: 11px; color: #334155;")
+        style(self._engine_label, lambda p: f"font-size: 11px; color: {p.text_fainter};")
         results_layout.addWidget(self._engine_label)
 
         layout.addWidget(self._results_widget)
@@ -296,6 +303,15 @@ class SimulationLabView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
+        theme_manager.changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, _name: str):
+        if self._last_result is not None:
+            algo_color = algo_colors(theme_manager.palette).get(
+                self._last_result.config.algorithm, theme_manager.palette.accent
+            )
+            self._result_header.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {algo_color};")
+
     def _update_scenario_desc(self):
         key = self._scenario_combo.currentData()
         if key and key in SCENARIOS:
@@ -315,15 +331,16 @@ class SimulationLabView(QWidget):
             queue_size=self._queue_spin.value(),
         )
 
+        p = theme_manager.palette
         self._btn_run.setEnabled(False)
         self._btn_run.setText("Simulating...")
         self._results_widget.setVisible(False)
         self._progress_frame.setVisible(True)
         self._progress_bar.setValue(0)
         self._progress_label.setText("Starting simulation...")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #94a3b8;")
+        self._progress_label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {p.text_secondary};")
 
-        self._worker = SimWorker(config)
+        self._worker = SimWorker(config, self._engine_selector.build_engine())
         self._worker.progress.connect(self._on_progress)
         self._worker.complete.connect(self._on_complete)
         self._worker.error.connect(self._on_error)
@@ -335,6 +352,7 @@ class SimulationLabView(QWidget):
         self._progress_bar.setValue(value)
 
     def _on_complete(self, result: SimulationResult):
+        p = theme_manager.palette
         self._btn_run.setEnabled(True)
         self._btn_run.setText("Run Simulation")
         self._progress_frame.setVisible(False)
@@ -348,7 +366,7 @@ class SimulationLabView(QWidget):
         self._metric_values["total_pkts"].setText(f"{m.total_packets:,}")
         self._metric_values["dropped"].setText(f"{m.dropped_packets:,}")
 
-        algo_color = ALGO_COLORS.get(result.config.algorithm, "#00f0ff")
+        algo_color = algo_colors(p).get(result.config.algorithm, p.accent)
         scenario_name = SCENARIOS.get(result.scenario, {}).get("name", result.scenario)
         self._result_header.setText(f"{result.algorithm}  on  {scenario_name}")
         self._result_header.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {algo_color};")
@@ -394,5 +412,5 @@ class SimulationLabView(QWidget):
         self._btn_run.setEnabled(True)
         self._btn_run.setText("Run Simulation")
         self._progress_label.setText(f"Error: {msg}")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #ef4444;")
+        self._progress_label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {theme_manager.palette.danger};")
         self._worker = None

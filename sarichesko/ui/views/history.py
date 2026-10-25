@@ -11,57 +11,63 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
 from ...utils.export import export_rows_to_csv, default_export_dir
+from ..theme import theme_manager, Palette, style
 
 
-TABLE_STYLE = """
-QTableWidget {
-    background-color: #05060a;
-    color: #e2e8f0;
+def table_style(p: Palette) -> str:
+    return f"""
+QTableWidget {{
+    background-color: {p.surface_alt};
+    color: {p.text};
     border: none;
-    gridline-color: #121524;
+    gridline-color: {p.border};
     font-size: 12px;
-    selection-background-color: #0c1424;
-    selection-color: #00f0ff;
-}
-QTableWidget::item {
+    selection-background-color: {p.selection};
+    selection-color: {p.accent};
+}}
+QTableWidget::item {{
     padding: 6px;
-    border-bottom: 1px solid #121524;
-}
-QHeaderView::section {
-    background-color: #05060a;
-    color: #64748b;
+    border-bottom: 1px solid {p.border};
+}}
+QHeaderView::section {{
+    background-color: {p.surface_alt};
+    color: {p.text_muted};
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.5px;
     border: none;
-    border-bottom: 1px solid #121524;
+    border-bottom: 1px solid {p.border};
     padding: 8px 6px;
-}
-QScrollBar:vertical {
-    background: #05060a;
+}}
+QScrollBar:vertical {{
+    background: {p.surface_alt};
     width: 8px;
-}
-QScrollBar::handle:vertical {
-    background: #1a1d2e;
+}}
+QScrollBar::handle:vertical {{
+    background: {p.border_strong};
     border-radius: 4px;
-}
+}}
 """
 
-ALGO_COLORS = {
-    "Leaky Bucket": "#00f0ff",
-    "Token Bucket": "#a78bfa",
-    "RED": "#f59e0b",
-    "CoDel": "#00e5a3",
-}
 
-ISP_VERDICT_DISPLAY = {
-    "healthy": ("Healthy", "#00e5a3"),
-    "local_congestion": ("Local Congestion", "#f59e0b"),
-    "last_mile": ("Last Mile Issue", "#ef4444"),
-    "isp_degradation": ("ISP Degradation", "#f59e0b"),
-    "isp_outage": ("ISP Outage", "#ef4444"),
-    "dns_issue": ("DNS Issue", "#ef4444"),
-}
+def algo_colors(p: Palette) -> dict:
+    return {
+        "Leaky Bucket": p.accent,
+        "Token Bucket": p.purple,
+        "RED": p.warning,
+        "CoDel": p.success,
+    }
+
+
+def isp_verdict_display(p: Palette) -> dict:
+    return {
+        "healthy": ("Healthy", p.success),
+        "local_congestion": ("Local Congestion", p.warning),
+        "last_mile": ("Last Mile Issue", p.danger),
+        "isp_degradation": ("ISP Degradation", p.warning),
+        "isp_outage": ("ISP Outage", p.danger),
+        "dns_issue": ("DNS Issue", p.danger),
+    }
 
 
 def _fmt_time(ts: float) -> str:
@@ -76,22 +82,22 @@ def _segment_button(label: str) -> QPushButton:
     btn.setCheckable(True)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedHeight(34)
-    btn.setStyleSheet("""
-        QPushButton {
-            background-color: #080a10;
-            color: #94a3b8;
-            border: 1px solid #1a1d2e;
+    style(btn, lambda p: f"""
+        QPushButton {{
+            background-color: {p.surface};
+            color: {p.text_secondary};
+            border: 1px solid {p.border_strong};
             border-radius: 8px;
             padding: 6px 16px;
             font-size: 12px;
             font-weight: 700;
-        }
-        QPushButton:hover { border-color: #00f0ff; color: #00f0ff; }
-        QPushButton:checked {
-            background-color: #0c1424;
-            color: #00f0ff;
-            border-color: #00f0ff;
-        }
+        }}
+        QPushButton:hover {{ border-color: {p.accent}; color: {p.accent}; }}
+        QPushButton:checked {{
+            background-color: {p.selection};
+            color: {p.accent};
+            border-color: {p.accent};
+        }}
     """)
     return btn
 
@@ -102,7 +108,7 @@ def _empty_state(text: str) -> QFrame:
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(24, 40, 24, 40)
     lbl = QLabel(text)
-    lbl.setStyleSheet("font-size: 13px; color: #64748b;")
+    style(lbl, lambda p: f"font-size: 13px; color: {p.text_muted};")
     lbl.setWordWrap(True)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     layout.addWidget(lbl)
@@ -119,7 +125,7 @@ class HistoryView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -131,9 +137,9 @@ class HistoryView(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
         title = QLabel("History")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Past diagnostics, simulation runs, and applied fixes")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -174,7 +180,7 @@ class HistoryView(QWidget):
         diag_layout.setSpacing(14)
 
         self._diag_table = QTableWidget(0, 5)
-        self._diag_table.setStyleSheet(TABLE_STYLE)
+        style(self._diag_table, table_style)
         self._diag_table.setHorizontalHeaderLabels(["Time", "Score", "Severity", "ISP Verdict", "Recommended"])
         self._diag_table.verticalHeader().hide()
         self._diag_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -190,17 +196,17 @@ class HistoryView(QWidget):
         dd.setContentsMargins(18, 16, 18, 16)
         dd.setSpacing(8)
         dd_title = QLabel("RUN DETAIL")
-        dd_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(dd_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         dd.addWidget(dd_title)
         self._diag_detail_algo = QLabel("Select a row")
-        self._diag_detail_algo.setStyleSheet("font-size: 18px; font-weight: 800; color: #00f0ff;")
+        style(self._diag_detail_algo, lambda p: f"font-size: 18px; font-weight: 800; color: {p.accent};")
         dd.addWidget(self._diag_detail_algo)
         self._diag_detail_reason = QLabel("")
-        self._diag_detail_reason.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        style(self._diag_detail_reason, lambda p: f"font-size: 12px; color: {p.text_secondary};")
         self._diag_detail_reason.setWordWrap(True)
         dd.addWidget(self._diag_detail_reason)
         self._diag_detail_meta = QLabel("")
-        self._diag_detail_meta.setStyleSheet("font-size: 11px; color: #475569;")
+        style(self._diag_detail_meta, lambda p: f"font-size: 11px; color: {p.text_faint};")
         self._diag_detail_meta.setWordWrap(True)
         dd.addWidget(self._diag_detail_meta)
         dd.addStretch()
@@ -215,7 +221,7 @@ class HistoryView(QWidget):
         sim_layout.setSpacing(14)
 
         self._sim_table = QTableWidget(0, 6)
-        self._sim_table.setStyleSheet(TABLE_STYLE)
+        style(self._sim_table, table_style)
         self._sim_table.setHorizontalHeaderLabels(
             ["Time", "Scenario", "Algorithm", "Throughput", "Latency", "Loss"])
         self._sim_table.verticalHeader().hide()
@@ -232,17 +238,17 @@ class HistoryView(QWidget):
         sd.setContentsMargins(18, 16, 18, 16)
         sd.setSpacing(8)
         sd_title = QLabel("RUN DETAIL")
-        sd_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(sd_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         sd.addWidget(sd_title)
         self._sim_detail_algo = QLabel("Select a row")
-        self._sim_detail_algo.setStyleSheet("font-size: 18px; font-weight: 800; color: #a78bfa;")
+        style(self._sim_detail_algo, lambda p: f"font-size: 18px; font-weight: 800; color: {p.purple};")
         sd.addWidget(self._sim_detail_algo)
         self._sim_detail_metrics = QLabel("")
-        self._sim_detail_metrics.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        style(self._sim_detail_metrics, lambda p: f"font-size: 12px; color: {p.text_secondary};")
         self._sim_detail_metrics.setWordWrap(True)
         sd.addWidget(self._sim_detail_metrics)
         self._sim_detail_params = QLabel("")
-        self._sim_detail_params.setStyleSheet("font-size: 11px; color: #475569;")
+        style(self._sim_detail_params, lambda p: f"font-size: 11px; color: {p.text_faint};")
         self._sim_detail_params.setWordWrap(True)
         sd.addWidget(self._sim_detail_params)
         sd.addStretch()
@@ -257,7 +263,7 @@ class HistoryView(QWidget):
         fix_layout.setSpacing(10)
 
         self._fix_table = QTableWidget(0, 6)
-        self._fix_table.setStyleSheet(TABLE_STYLE)
+        style(self._fix_table, table_style)
         self._fix_table.setHorizontalHeaderLabels(
             ["Time", "Interface", "Algorithm", "Score Before", "Score After", "Rolled Back"])
         self._fix_table.verticalHeader().hide()
@@ -292,11 +298,19 @@ class HistoryView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
+        theme_manager.changed.connect(self._on_theme_changed)
         self._load_all()
 
     def showEvent(self, event):
         super().showEvent(event)
         self._load_all()
+
+    def _on_theme_changed(self, _name: str):
+        self._populate_diag_table()
+        self._populate_sim_table()
+        self._populate_fix_table()
+        self._on_diag_selected()
+        self._on_sim_selected()
 
     def _switch_tab(self, index: int):
         for i, btn in enumerate((self._btn_diag_tab, self._btn_sim_tab, self._btn_fix_tab)):
@@ -321,12 +335,15 @@ class HistoryView(QWidget):
         self._populate_fix_table()
 
     def _populate_diag_table(self):
+        p = theme_manager.palette
+        isp_display = isp_verdict_display(p)
+
         self._diag_table.setRowCount(len(self._diag_rows))
         for row, r in enumerate(self._diag_rows):
             self._diag_table.setItem(row, 0, QTableWidgetItem(_fmt_time(r["timestamp"])))
             self._diag_table.setItem(row, 1, QTableWidgetItem(f"{r['congestion_score'] or 0:.0f}"))
             self._diag_table.setItem(row, 2, QTableWidgetItem(r["severity"] or "—"))
-            verdict_text, _ = ISP_VERDICT_DISPLAY.get(r["isp_verdict"] or "", (r["isp_verdict"] or "—", "#94a3b8"))
+            verdict_text, _ = isp_display.get(r["isp_verdict"] or "", (r["isp_verdict"] or "—", p.text_secondary))
             self._diag_table.setItem(row, 3, QTableWidgetItem(verdict_text))
             algo_item = QTableWidgetItem(r["recommended_algo"] or "None needed")
             self._diag_table.setItem(row, 4, algo_item)
@@ -366,9 +383,12 @@ class HistoryView(QWidget):
         rows = self._diag_table.selectionModel().selectedRows()
         if not rows or not self._diag_rows:
             return
+        p = theme_manager.palette
+        algo_c = algo_colors(p)
+
         r = self._diag_rows[rows[0].row()]
         algo = r["recommended_algo"] or "No algorithm needed"
-        color = ALGO_COLORS.get(algo, "#00e5a3")
+        color = algo_c.get(algo, p.success)
         self._diag_detail_algo.setText(algo)
         self._diag_detail_algo.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {color};")
         self._diag_detail_reason.setText(r["recommendation_reason"] or "No reason recorded.")
@@ -383,8 +403,11 @@ class HistoryView(QWidget):
         rows = self._sim_table.selectionModel().selectedRows()
         if not rows or not self._sim_rows:
             return
+        p = theme_manager.palette
+        algo_c = algo_colors(p)
+
         r = self._sim_rows[rows[0].row()]
-        color = ALGO_COLORS.get(r["algorithm"], "#a78bfa")
+        color = algo_c.get(r["algorithm"], p.purple)
         self._sim_detail_algo.setText(r["algorithm"] or "—")
         self._sim_detail_algo.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {color};")
         self._sim_detail_metrics.setText(

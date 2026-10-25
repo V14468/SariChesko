@@ -25,6 +25,8 @@ import pytest
 from sarichesko.simulation.ns3_bridge import (
     find_ns3_executable,
     is_ns3_available,
+    ns3_status,
+    Ns3Status,
     Ns3SimulationEngine,
     _parse_flowmonitor_xml,
     _parse_ns_value,
@@ -354,8 +356,18 @@ class TestJainFairness:
 # 6  Subprocess error handling (mocked)
 # ===================================================================
 
+def _extract_out_path(cmd: list[str]) -> str | None:
+    """Extract --out=<path> from a command list."""
+    for arg in cmd:
+        if "--out=" in arg:
+            for part in arg.split():
+                if part.startswith("--out="):
+                    return part.split("=", 1)[1]
+    return None
+
+
 class TestSubprocessErrorHandling:
-    """Test that subprocess failures produce RuntimeError, not silent corruption."""
+    """PLUMBING tests with stand-in: subprocess failures produce RuntimeError."""
 
     def _config(self):
         return SimConfig(
@@ -371,17 +383,30 @@ class TestSubprocessErrorHandling:
         with pytest.raises(RuntimeError, match="exited with code 1"):
             _run_ns3_subprocess("/fake/ns3", self._config())
 
-    def test_empty_stdout_raises(self, monkeypatch):
+    def test_empty_output_file_raises(self, monkeypatch):
+        """When ns-3 exits 0 but leaves the output file empty, raise RuntimeError."""
         import subprocess as sp
         fake_result = sp.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         monkeypatch.setattr("subprocess.run", lambda *a, **kw: fake_result)
-        with pytest.raises(RuntimeError, match="no stdout output"):
+        with pytest.raises(RuntimeError, match="output file was empty"):
+            _run_ns3_subprocess("/fake/ns3", self._config())
+
+    def test_missing_output_file_raises(self, monkeypatch):
+        """When ns-3 exits 0 but does not create the output file, raise RuntimeError."""
+        import subprocess as sp
+        def fake_run(cmd, *a, **kw):
+            out_path = _extract_out_path(cmd)
+            if out_path and os.path.exists(out_path):
+                os.unlink(out_path)
+            return sp.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        monkeypatch.setattr("subprocess.run", fake_run)
+        with pytest.raises(RuntimeError, match="did not write the expected output file"):
             _run_ns3_subprocess("/fake/ns3", self._config())
 
     def test_timeout_raises(self, monkeypatch):
         import subprocess as sp
         def fake_run(*a, **kw):
-            raise sp.TimeoutExpired(cmd="ns3", timeout=120)
+            raise sp.TimeoutExpired(cmd="ns3", timeout=600)
         monkeypatch.setattr("subprocess.run", fake_run)
         with pytest.raises(RuntimeError, match="timed out"):
             _run_ns3_subprocess("/fake/ns3", self._config())
@@ -395,8 +420,13 @@ class TestSubprocessErrorHandling:
 
     def test_invalid_xml_raises(self, monkeypatch):
         import subprocess as sp
-        fake_result = sp.CompletedProcess(args=[], returncode=0, stdout="NOT XML AT ALL", stderr="")
-        monkeypatch.setattr("subprocess.run", lambda *a, **kw: fake_result)
+        def fake_run(cmd, *a, **kw):
+            out_path = _extract_out_path(cmd)
+            if out_path:
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write("NOT XML AT ALL")
+            return sp.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+        monkeypatch.setattr("subprocess.run", fake_run)
         with pytest.raises(RuntimeError, match="parse.*XML"):
             _run_ns3_subprocess("/fake/ns3", self._config())
 
@@ -406,11 +436,10 @@ class TestSubprocessErrorHandling:
 # ===================================================================
 
 class TestNs3EngineSubprocessFallback:
-    """When ns-3 IS detected but the subprocess fails, the engine should
-    fall back to PythonSimulationEngine with an error-descriptive engine_used."""
+    """PLUMBING tests with stand-in: When ns-3 is detected but subprocess fails,
+    the engine falls back to PythonSimulationEngine with an error-descriptive engine_used."""
 
-    def test_fallback_on_subprocess_error(self, monkeypatch, tmp_path):
-        # Set up so ns-3 IS "detected"
+    def _setup_detected_ns3(self, monkeypatch, tmp_path):
         ns3_dir = tmp_path / "ns3"
         ns3_dir.mkdir()
         (ns3_dir / "ns3").write_text("#!/bin/bash\n")
@@ -418,33 +447,140 @@ class TestNs3EngineSubprocessFallback:
         monkeypatch.delenv("NS3_DIR", raising=False)
         monkeypatch.setattr("shutil.which", lambda _: None)
 
-        # But make subprocess.run raise
+    def _config(self):
+        return SimConfig(
+            scenario="mixed_traffic",
+            algorithm=AlgorithmType.LEAKY_BUCKET,
+            duration_s=1.0,
+        )
+
+    def test_fallback_on_file_not_found(self, monkeypatch, tmp_path):
+        self._setup_detected_ns3(monkeypatch, tmp_path)
         def fake_run(*a, **kw):
             raise FileNotFoundError("ns3 binary gone")
         monkeypatch.setattr("subprocess.run", fake_run)
 
         engine = Ns3SimulationEngine()
-        assert engine.ns3_available is True
+        result = engine.run(self._config())
 
-        config = SimConfig(
-            scenario="mixed_traffic",
-            algorithm=AlgorithmType.LEAKY_BUCKET,
-            duration_s=1.0,
-        )
-        result = engine.run(config)
-
-        # Should NOT crash — should fall back
         assert isinstance(result, SimulationResult)
         assert "python_fallback" in result.engine_used
         assert "ns-3 error" in result.engine_used
         assert result.metrics.total_packets > 0
 
+    def test_fallback_on_nonzero_exit(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        self._setup_detected_ns3(monkeypatch, tmp_path)
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: sp.CompletedProcess(args=[], returncode=1, stderr="Fatal crash"),
+        )
+        engine = Ns3SimulationEngine()
+        result = engine.run(self._config())
+
+        assert isinstance(result, SimulationResult)
+        assert "python_fallback" in result.engine_used
+        assert "Fatal crash" in result.engine_used
+
+    def test_fallback_on_timeout(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        self._setup_detected_ns3(monkeypatch, tmp_path)
+        def fake_run(*a, **kw):
+            raise sp.TimeoutExpired(cmd="ns3", timeout=600)
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        engine = Ns3SimulationEngine()
+        result = engine.run(self._config())
+
+        assert isinstance(result, SimulationResult)
+        assert "python_fallback" in result.engine_used
+        assert "timed out" in result.engine_used
+
+    def test_fallback_on_missing_output_file(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        self._setup_detected_ns3(monkeypatch, tmp_path)
+        def fake_run(cmd, *a, **kw):
+            out_path = _extract_out_path(cmd)
+            if out_path and os.path.exists(out_path):
+                os.unlink(out_path)
+            return sp.CompletedProcess(args=cmd, returncode=0)
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        engine = Ns3SimulationEngine()
+        result = engine.run(self._config())
+
+        assert isinstance(result, SimulationResult)
+        assert "python_fallback" in result.engine_used
+        assert "expected output file" in result.engine_used
+
+    def test_fallback_on_malformed_xml(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        self._setup_detected_ns3(monkeypatch, tmp_path)
+        def fake_run(cmd, *a, **kw):
+            out_path = _extract_out_path(cmd)
+            if out_path:
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write("<<< INVALID XML >>>")
+            return sp.CompletedProcess(args=cmd, returncode=0)
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        engine = Ns3SimulationEngine()
+        result = engine.run(self._config())
+
+        assert isinstance(result, SimulationResult)
+        assert "python_fallback" in result.engine_used
+        assert "parse" in result.engine_used
+
 
 # ===================================================================
-# 8  Command builder
+# 8  ns-3 subprocess plumbing (success case with canned XML)
+# ===================================================================
+
+class TestNs3SubprocessPlumbing:
+    """PLUMBING test with stand-in: verifies that when subprocess writes valid
+    FlowMonitor XML to the --out file, Ns3SimulationEngine parses it and succeeds."""
+
+    def test_successful_plumbing_run(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        ns3_dir = tmp_path / "ns3"
+        ns3_dir.mkdir()
+        launcher = ns3_dir / "ns3"
+        launcher.write_text("#!/bin/bash\n")
+        monkeypatch.setenv("NS3_HOME", str(ns3_dir))
+        monkeypatch.delenv("NS3_DIR", raising=False)
+        monkeypatch.setattr("shutil.which", lambda _: None)
+
+        def fake_run(cmd, *a, **kw):
+            out_path = _extract_out_path(cmd)
+            assert out_path is not None, "Command must contain --out=<path>"
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(SAMPLE_FLOWMON_XML)
+            return sp.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        engine = Ns3SimulationEngine()
+        config = SimConfig(
+            scenario="bulk_transfer",
+            algorithm=AlgorithmType.CODEL,
+            duration_s=10.0,
+            link_bandwidth_mbps=10.0,
+            queue_size=100,
+        )
+        result = engine.run(config)
+
+        assert result.engine_used == "ns3"
+        assert result.metrics.total_packets == 1800
+        assert result.metrics.throughput_mbps > 0
+        assert result.metrics.loss_pct == pytest.approx(3.33, rel=0.1)
+
+
+# ===================================================================
+# 9  Command builder
 # ===================================================================
 
 class TestBuildNs3Command:
+    """Unit tests for _build_ns3_command construction."""
 
     def test_command_contains_scenario(self):
         config = SimConfig(scenario="bulk_transfer", algorithm=AlgorithmType.RED)
@@ -460,3 +596,77 @@ class TestBuildNs3Command:
         config = SimConfig(scenario="bulk_transfer", algorithm=AlgorithmType.RED)
         cmd = _build_ns3_command("/my/ns3", config)
         assert cmd[0] == "/my/ns3"
+
+    def test_command_contains_out_path(self):
+        config = SimConfig(scenario="bulk_transfer", algorithm=AlgorithmType.RED)
+        cmd = _build_ns3_command("/my/ns3", config, out_path="/tmp/test_out.xml")
+        assert any("--out=/tmp/test_out.xml" in arg for arg in cmd)
+
+    def test_command_modern_launcher_uses_run(self):
+        config = SimConfig(scenario="bulk_transfer", algorithm=AlgorithmType.RED)
+        cmd = _build_ns3_command("/path/to/ns3", config)
+        assert cmd == ["/path/to/ns3", "run", cmd[2]]
+        assert cmd[2].startswith("sarichesko-sim ")
+
+    def test_command_legacy_waf_uses_dash_dash_run(self):
+        config = SimConfig(scenario="bulk_transfer", algorithm=AlgorithmType.RED)
+        cmd = _build_ns3_command("/path/to/waf", config)
+        assert cmd == ["/path/to/waf", "--run", cmd[2]]
+        assert cmd[2].startswith("sarichesko-sim ")
+
+
+# ===================================================================
+# 10  ns3_status() readiness probe
+# ===================================================================
+
+class TestNs3Status:
+    """Unit tests for ns3_status() probing all three readiness states."""
+
+    def test_status_unavailable_no_launcher(self, monkeypatch):
+        monkeypatch.setattr("sarichesko.simulation.ns3_bridge.find_ns3_executable", lambda: None)
+        status = ns3_status()
+        assert status.state == "unavailable"
+        assert status.launcher is None
+        assert status.root is None
+        assert len(status.message) > 0
+
+    def test_status_scenario_missing(self, monkeypatch, tmp_path):
+        ns3_root = tmp_path / "ns-3-dev"
+        ns3_root.mkdir()
+        launcher = ns3_root / "ns3"
+        launcher.write_text("#!/bin/bash\n")
+
+        # Mock platform so Windows check doesn't short-circuit
+        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setattr(
+            "sarichesko.simulation.ns3_bridge.find_ns3_executable",
+            lambda: str(launcher),
+        )
+
+        status = ns3_status()
+        assert status.state == "scenario_missing"
+        assert "sarichesko-sim.cc" in status.message
+        assert status.launcher == str(launcher)
+        assert status.root == ns3_root
+
+    def test_status_ready(self, monkeypatch, tmp_path):
+        ns3_root = tmp_path / "ns-3-dev"
+        ns3_root.mkdir()
+        launcher = ns3_root / "ns3"
+        launcher.write_text("#!/bin/bash\n")
+        scratch_dir = ns3_root / "scratch"
+        scratch_dir.mkdir()
+        (scratch_dir / "sarichesko-sim.cc").write_text("// C++ scenario\n")
+
+        # Mock platform so Windows check doesn't short-circuit
+        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setattr(
+            "sarichesko.simulation.ns3_bridge.find_ns3_executable",
+            lambda: str(launcher),
+        )
+
+        status = ns3_status()
+        assert status.state == "ready"
+        assert "ready" in status.message.lower()
+        assert status.launcher == str(launcher)
+        assert status.root == ns3_root

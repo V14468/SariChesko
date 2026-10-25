@@ -29,6 +29,9 @@ sarichesko = "sarichesko.app:main"
 [tool.setuptools.packages.find]
 include = ["sarichesko*"]
 
+[tool.setuptools.package-data]
+sarichesko = ["ui/assets/*.png"]
+
 [tool.setuptools.dynamic]
 version = {attr = "sarichesko.__version__"}
 

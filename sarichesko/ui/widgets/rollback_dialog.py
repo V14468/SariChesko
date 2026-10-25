@@ -1,12 +1,15 @@
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 from PySide6.QtCore import Qt
 
+from ..theme import Palette, style
 
-VERDICT_DISPLAY = {
-    "improved": ("Improved", "#00e5a3"),
-    "worse": ("Got Worse", "#ef4444"),
-    "no_change": ("No Significant Change", "#94a3b8"),
-}
+
+def verdict_display(p: Palette) -> dict:
+    return {
+        "improved": ("Improved", p.success),
+        "worse": ("Got Worse", p.danger),
+        "no_change": ("No Significant Change", p.text_secondary),
+    }
 
 
 def _metric_row(label: str, before, after, unit: str, lower_is_better: bool = True) -> QFrame:
@@ -16,22 +19,23 @@ def _metric_row(label: str, before, after, unit: str, lower_is_better: bool = Tr
     hl.setSpacing(10)
 
     lbl = QLabel(label)
-    lbl.setStyleSheet("font-size: 12px; color: #94a3b8;")
+    style(lbl, lambda p: f"font-size: 12px; color: {p.text_secondary};")
     lbl.setFixedWidth(110)
     hl.addWidget(lbl)
 
     if before is None or after is None:
         val_lbl = QLabel("\u2014")
-        val_lbl.setStyleSheet("font-size: 12px; color: #64748b;")
+        style(val_lbl, lambda p: f"font-size: 12px; color: {p.text_muted};")
         hl.addWidget(val_lbl)
         hl.addStretch()
         return row
 
-    improved = (after < before) if lower_is_better else (after > before)
-    color = "#00e5a3" if improved else ("#ef4444" if after != before else "#94a3b8")
+    def _color(p: Palette) -> str:
+        improved = (after < before) if lower_is_better else (after > before)
+        return p.success if improved else (p.danger if after != before else p.text_secondary)
 
     val_lbl = QLabel(f"{before:.2f} {unit}  \u2192  {after:.2f} {unit}")
-    val_lbl.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {color};")
+    style(val_lbl, lambda p: f"font-size: 13px; font-weight: 700; color: {_color(p)};")
     hl.addWidget(val_lbl)
     hl.addStretch()
     return row
@@ -49,9 +53,9 @@ class RollbackDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Fix Applied \u2014 Verification Result")
         self.setMinimumWidth(420)
-        self.setStyleSheet("""
-            QDialog { background-color: #0a0b10; }
-            QLabel { color: #e2e8f0; }
+        style(self, lambda p: f"""
+            QDialog {{ background-color: {p.surface_raised}; }}
+            QLabel {{ color: {p.text}; }}
         """)
         self.rollback_requested = False
 
@@ -60,13 +64,13 @@ class RollbackDialog(QDialog):
         layout.setSpacing(14)
 
         title = QLabel(f"{algo_name} applied to your network")
-        title.setStyleSheet("font-size: 16px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 16px; font-weight: 800; color: {p.text_strong};")
         title.setWordWrap(True)
         layout.addWidget(title)
 
         if apply_message:
             msg = QLabel(apply_message)
-            msg.setStyleSheet("font-size: 11px; color: #64748b;")
+            style(msg, lambda p: f"font-size: 11px; color: {p.text_muted};")
             msg.setWordWrap(True)
             layout.addWidget(msg)
 
@@ -77,21 +81,24 @@ class RollbackDialog(QDialog):
         cl.setSpacing(6)
 
         verdict_title = QLabel("VERIFICATION")
-        verdict_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(verdict_title, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         cl.addWidget(verdict_title)
 
+        v_lbl = QLabel()
         if verdict is None:
-            v_lbl = QLabel("Could not verify (see message above)")
-            v_lbl.setStyleSheet("font-size: 16px; font-weight: 800; color: #94a3b8;")
+            v_lbl.setText("Could not verify (see message above)")
+            style(v_lbl, lambda p: f"font-size: 16px; font-weight: 800; color: {p.text_secondary};")
         else:
-            v_text, v_color = VERDICT_DISPLAY.get(verdict, ("Unknown", "#94a3b8"))
-            v_lbl = QLabel(v_text)
-            v_lbl.setStyleSheet(f"font-size: 16px; font-weight: 800; color: {v_color};")
+            style(v_lbl, lambda p: f"font-size: 16px; font-weight: 800; color: {verdict_display(p).get(verdict, ('Unknown', p.text_secondary))[1]};")
+            # Set initial text
+            from ..theme import theme_manager
+            v_text, _ = verdict_display(theme_manager.palette).get(verdict, ("Unknown", theme_manager.palette.text_secondary))
+            v_lbl.setText(v_text)
         cl.addWidget(v_lbl)
 
         if score_after is not None:
             score_lbl = QLabel(f"Congestion score: {score_before:.0f} \u2192 {score_after:.0f}")
-            score_lbl.setStyleSheet("font-size: 12px; color: #94a3b8;")
+            style(score_lbl, lambda p: f"font-size: 12px; color: {p.text_secondary};")
             cl.addWidget(score_lbl)
 
         cl.addWidget(_metric_row("Latency", latency_before, latency_after, "ms", lower_is_better=True))
@@ -103,7 +110,7 @@ class RollbackDialog(QDialog):
             "You can keep this change or roll it back to your previous settings right now. "
             "SariChesko will not change anything further without asking again."
         )
-        note.setStyleSheet("font-size: 11px; color: #64748b;")
+        style(note, lambda p: f"font-size: 11px; color: {p.text_muted};")
         note.setWordWrap(True)
         layout.addWidget(note)
 
@@ -113,9 +120,9 @@ class RollbackDialog(QDialog):
         self._btn_rollback = QPushButton("Roll Back")
         self._btn_rollback.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_rollback.setFixedHeight(36)
-        self._btn_rollback.setStyleSheet("""
-            QPushButton { background-color: #1a0f12; color: #ef4444; border: 1px solid #3f1d22; border-radius: 8px; padding: 6px 16px; font-weight: 700; }
-            QPushButton:hover { background-color: #2a1216; }
+        style(self._btn_rollback, lambda p: f"""
+            QPushButton {{ background-color: {p.danger_bg}; color: {p.danger}; border: 1px solid {p.danger_border}; border-radius: 8px; padding: 6px 16px; font-weight: 700; }}
+            QPushButton:hover {{ background-color: {p.danger_bg_hover}; }}
         """)
         self._btn_rollback.clicked.connect(self._on_rollback)
         btn_row.addWidget(self._btn_rollback)
@@ -133,13 +140,13 @@ class RollbackDialog(QDialog):
         # visually emphasized action instead of Keep.
         if verdict == "worse":
             self._btn_keep.setObjectName("")
-            self._btn_keep.setStyleSheet(
-                "QPushButton { background-color: #12141c; color: #94a3b8; border: 1px solid #1a1d2e; "
+            style(self._btn_keep, lambda p: (
+                f"QPushButton {{ background-color: {p.dialog_btn}; color: {p.text_secondary}; border: 1px solid {p.border_strong}; "
                 "border-radius: 8px; padding: 6px 16px; font-weight: 700; }"
-            )
-            self._btn_rollback.setStyleSheet("""
-                QPushButton { background-color: #ef4444; color: #0a0b10; border: none; border-radius: 8px; padding: 6px 16px; font-weight: 800; }
-                QPushButton:hover { background-color: #f87171; }
+            ))
+            style(self._btn_rollback, lambda p: f"""
+                QPushButton {{ background-color: {p.danger}; color: {p.surface_raised}; border: none; border-radius: 8px; padding: 6px 16px; font-weight: 800; }}
+                QPushButton:hover {{ background-color: {p.danger_hover}; }}
             """)
 
     def _on_rollback(self):

@@ -1,14 +1,25 @@
 import math
 from pathlib import Path
+from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
     QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRectF
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QPixmap
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QPixmap, QImage
+
+from ..theme import theme_manager, derive_light_logo, style
 
 _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+_raw_welcome_image: Optional[QImage] = None
+
+
+def _get_raw_image() -> QImage:
+    global _raw_welcome_image
+    if _raw_welcome_image is None:
+        _raw_welcome_image = QImage(str(_ASSETS_DIR / "sarichesko_welcome.png"))
+    return _raw_welcome_image
 
 
 class SCMonogramWidget(QWidget):
@@ -65,18 +76,15 @@ class SCMonogramWidget(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         # ── "S" — built from two opposing arcs ──
-        # Top arc of S: curves from top-center rightward, sweeping 180°
         s_arc_h = h * 0.48  # height of each S half-arc
         s_arc_w = w * 0.52
 
-        # Upper arc: center-top to center-mid, bulging RIGHT
         s_top_rect = QRectF(mid_x - s_arc_w * 0.42, top,
                             s_arc_w, s_arc_h)
         s_path = QPainterPath()
         s_path.arcMoveTo(s_top_rect, 90)
-        s_path.arcTo(s_top_rect, 90, 180)   # sweep clockwise (positive = CCW in Qt, so 180° sweep from 90°)
+        s_path.arcTo(s_top_rect, 90, 180)
 
-        # Lower arc: center-mid to center-bottom, bulging LEFT
         s_bot_rect = QRectF(mid_x - s_arc_w * 0.58, bottom - s_arc_h,
                             s_arc_w, s_arc_h)
         s_path.arcTo(s_bot_rect, 270, 180)
@@ -89,30 +97,33 @@ class SCMonogramWidget(QWidget):
                         w * 0.88, h * 0.90)
         c_path = QPainterPath()
         c_path.arcMoveTo(c_rect, 55)
-        c_path.arcTo(c_rect, 55, 250)  # sweep 250° leaving an opening on the right
+        c_path.arcTo(c_rect, 55, 250)
 
         p.drawPath(c_path)
 
     def paintEvent(self, event):
         p = QPainter(self)
+        try:
+            cx = self.width() / 2
+            cy = self.height() / 2
+            size = min(self.width(), self.height())
 
-        cx = self.width() / 2
-        cy = self.height() / 2
-        size = min(self.width(), self.height())
+            breath = 0.5 + 0.5 * math.sin(self._phase)
+            border_alpha = int(20 + 20 * breath)
 
-        # Subtle breathing on the container border opacity
-        breath = 0.5 + 0.5 * math.sin(self._phase)
-        border_alpha = int(20 + 20 * breath)  # ranges 20–40, very subtle
-
-        self.draw_monogram(p, cx, cy, size,
-                           QColor(0, 240, 255), border_alpha)
-        p.end()
+            accent_color = QColor(theme_manager.palette.accent)
+            self.draw_monogram(p, cx, cy, size, accent_color, border_alpha)
+        finally:
+            p.end()
 
 
 class WelcomeView(QWidget):
     """Opening screen with animated logo and tagline."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._logo_cache: dict[str, QPixmap] = {}
+
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setContentsMargins(40, 20, 40, 40)
@@ -122,36 +133,29 @@ class WelcomeView(QWidget):
         c_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         c_layout.setSpacing(12)
 
-        # ── Welcome title graphic (replaces old SCMonogramWidget + title label) ──
-        welcome_pixmap = QPixmap(str(_ASSETS_DIR / "sarichesko_welcome.png"))
+        # ── Welcome title graphic ──
         self.logo_widget = QLabel()
-        self.logo_widget.setPixmap(
-            welcome_pixmap.scaled(
-                480, 255,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
         self.logo_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_logo()
         c_layout.addWidget(self.logo_widget, 0, Qt.AlignmentFlag.AlignCenter)
 
         c_layout.addSpacing(8)
 
         tagline_1 = QLabel("Sort It Out")
         tagline_1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tagline_1.setStyleSheet("""
+        style(tagline_1, lambda p: f"""
             font-size: 16px;
             font-weight: 700;
-            color: #ffffff;
+            color: {p.text_strong};
             letter-spacing: 2px;
         """)
 
         tagline_2 = QLabel("Adaptive Network Congestion & ISP Diagnostic Engine")
         tagline_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tagline_2.setStyleSheet("""
+        style(tagline_2, lambda p: f"""
             font-size: 13px;
             font-weight: 500;
-            color: #64748b;
+            color: {p.text_muted};
             letter-spacing: 0.5px;
         """)
 
@@ -161,13 +165,13 @@ class WelcomeView(QWidget):
 
         hint = QLabel("Select a module from the sidebar to begin")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("""
+        style(hint, lambda p: f"""
             font-size: 11px;
             font-weight: 600;
-            color: #475569;
+            color: {p.text_faint};
             letter-spacing: 1px;
-            background-color: #060810;
-            border: 1px solid #141824;
+            background-color: {p.welcome_card_bg};
+            border: 1px solid {p.welcome_card_border};
             border-radius: 20px;
             padding: 10px 28px;
         """)
@@ -183,3 +187,21 @@ class WelcomeView(QWidget):
         self._anim.setEndValue(1.0)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
+
+        theme_manager.changed.connect(lambda _: self._update_logo())
+
+    def _update_logo(self):
+        theme_name = theme_manager.name
+        if theme_name not in self._logo_cache:
+            raw_img = _get_raw_image()
+            if theme_name == "dark":
+                pixmap = QPixmap.fromImage(raw_img)
+            else:
+                derived = derive_light_logo(raw_img, theme_manager.palette.accent)
+                pixmap = QPixmap.fromImage(derived)
+            self._logo_cache[theme_name] = pixmap.scaled(
+                480, 255,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        self.logo_widget.setPixmap(self._logo_cache[theme_name])

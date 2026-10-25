@@ -1,4 +1,5 @@
 import time
+from typing import Any, Callable
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QGraphicsOpacityEffect, QFileDialog, QScrollArea,
@@ -9,71 +10,79 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
 from ...utils.export import export_text_to_file, default_export_dir
+from ..theme import theme_manager, Palette, style
 
 
-ALGO_COLORS = {
-    "Leaky Bucket": "#00f0ff",
-    "Token Bucket": "#a78bfa",
-    "RED": "#f59e0b",
-    "CoDel": "#00e5a3",
-}
+def algo_colors(p: Palette) -> dict:
+    return {
+        "Leaky Bucket": p.accent,
+        "Token Bucket": p.purple,
+        "RED": p.warning,
+        "CoDel": p.success,
+    }
 
-SEVERITY_COLORS = {
-    "NONE": "#00e5a3",
-    "MILD": "#00f0ff",
-    "MODERATE": "#f59e0b",
-    "SEVERE": "#f97316",
-    "CRITICAL": "#ef4444",
-}
 
-ISP_VERDICT_DISPLAY = {
-    "healthy": ("Healthy", "#00e5a3"),
-    "local_congestion": ("Local Congestion", "#f59e0b"),
-    "last_mile": ("Last Mile Issue", "#ef4444"),
-    "isp_degradation": ("ISP Degradation", "#f59e0b"),
-    "isp_outage": ("ISP Outage", "#ef4444"),
-    "dns_issue": ("DNS Issue", "#ef4444"),
-}
+def severity_colors(p: Palette) -> dict:
+    return {
+        "NONE": p.success,
+        "MILD": p.accent,
+        "MODERATE": p.warning,
+        "SEVERE": p.orange,
+        "CRITICAL": p.danger,
+    }
 
-CONTROL_STYLE = """
-QComboBox {
-    background-color: #080a10;
-    color: #e2e8f0;
-    border: 1px solid #1a1d2e;
+
+def isp_verdict_display(p: Palette) -> dict:
+    return {
+        "healthy": ("Healthy", p.success),
+        "local_congestion": ("Local Congestion", p.warning),
+        "last_mile": ("Last Mile Issue", p.danger),
+        "isp_degradation": ("ISP Degradation", p.warning),
+        "isp_outage": ("ISP Outage", p.danger),
+        "dns_issue": ("DNS Issue", p.danger),
+    }
+
+
+def control_style(p: Palette) -> str:
+    return f"""
+QComboBox {{
+    background-color: {p.surface};
+    color: {p.text};
+    border: 1px solid {p.border_strong};
     border-radius: 8px;
     padding: 7px 12px;
     font-size: 12px;
     font-weight: 600;
-}
-QComboBox:hover { border-color: #00f0ff; }
-QComboBox::drop-down { border: none; width: 24px; }
-QCheckBox {
-    color: #cbd5e1;
+}}
+QComboBox:hover {{ border-color: {p.accent}; }}
+QComboBox::drop-down {{ border: none; width: 24px; }}
+QCheckBox {{
+    color: {p.text_soft};
     spacing: 9px;
     font-size: 12px;
     font-weight: 600;
-}
-QCheckBox::indicator {
+}}
+QCheckBox::indicator {{
     width: 15px;
     height: 15px;
     border-radius: 4px;
-    border: 1px solid #334155;
-    background-color: #05060a;
-}
-QCheckBox::indicator:checked {
-    background-color: #00f0ff;
-    border-color: #00f0ff;
-}
-QTextEdit {
-    background-color: #05060a;
-    color: #cbd5e1;
-    border: 1px solid #121524;
+    border: 1px solid {p.text_fainter};
+    background-color: {p.surface_alt};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {p.accent};
+    border-color: {p.accent};
+}}
+QTextEdit {{
+    background-color: {p.surface_alt};
+    color: {p.text_soft};
+    border: 1px solid {p.border};
     border-radius: 8px;
     padding: 12px;
     font-family: Consolas, "Cascadia Mono", monospace;
     font-size: 12px;
-    selection-background-color: #0c1424;
-}
+    selection-background-color: {p.selection};
+}}
 """
 
 
@@ -105,13 +114,13 @@ def _avg(values: list[float]) -> float | None:
 
 def _section_label(text: str) -> QLabel:
     label = QLabel(text)
-    label.setStyleSheet("font-size: 11px; font-weight: 800; color: #64748b; letter-spacing: 0.8px;")
+    style(label, lambda p: f"font-size: 11px; font-weight: 800; color: {p.text_muted}; letter-spacing: 0.8px;")
     return label
 
 
 def _small_label(text: str) -> QLabel:
     label = QLabel(text)
-    label.setStyleSheet("font-size: 11px; color: #64748b;")
+    style(label, lambda p: f"font-size: 11px; color: {p.text_muted};")
     label.setWordWrap(True)
     return label
 
@@ -137,7 +146,7 @@ class ReportsView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -148,9 +157,9 @@ class ReportsView(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
         title = QLabel("Reports")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Build a focused network evidence brief from diagnostics, fixes, and simulations")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -206,6 +215,7 @@ class ReportsView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
+        theme_manager.changed.connect(lambda _: self._refresh_report())
         self._load_all()
 
     def showEvent(self, event):
@@ -223,7 +233,7 @@ class ReportsView(QWidget):
         title_col.setSpacing(2)
         title_col.addWidget(_section_label("REPORT PACKET"))
         summary = QLabel("Audience, period, and section mix drive the brief below.")
-        summary.setStyleSheet("font-size: 12px; color: #64748b;")
+        style(summary, lambda p: f"font-size: 12px; color: {p.text_muted};")
         title_col.addWidget(summary)
         top.addLayout(title_col, 1)
 
@@ -233,7 +243,7 @@ class ReportsView(QWidget):
         self._audience_combo = QComboBox()
         self._audience_combo.addItems(["Operations", "Executive", "Engineering"])
         self._audience_combo.setFixedHeight(34)
-        self._audience_combo.setStyleSheet(CONTROL_STYLE)
+        style(self._audience_combo, control_style)
         self._audience_combo.currentIndexChanged.connect(self._refresh_report)
         audience_col.addWidget(self._audience_combo)
         top.addLayout(audience_col)
@@ -248,7 +258,7 @@ class ReportsView(QWidget):
         self._window_combo.addItem("All time", 0)
         self._window_combo.setCurrentIndex(1)
         self._window_combo.setFixedHeight(34)
-        self._window_combo.setStyleSheet(CONTROL_STYLE)
+        style(self._window_combo, control_style)
         self._window_combo.currentIndexChanged.connect(self._refresh_report)
         window_col.addWidget(self._window_combo)
         top.addLayout(window_col)
@@ -267,7 +277,7 @@ class ReportsView(QWidget):
         ]:
             cb = QCheckBox(text)
             cb.setChecked(True)
-            cb.setStyleSheet(CONTROL_STYLE)
+            style(cb, control_style)
             cb.stateChanged.connect(self._refresh_report)
             self._section_checks[key] = cb
             checks.addWidget(cb)
@@ -282,7 +292,7 @@ class ReportsView(QWidget):
         headline = QHBoxLayout()
         headline.setSpacing(14)
         self._brief_verdict = QLabel("No Evidence")
-        self._brief_verdict.setStyleSheet("font-size: 28px; font-weight: 900; color: #64748b;")
+        style(self._brief_verdict, lambda p: f"font-size: 28px; font-weight: 900; color: {p.text_muted};")
         headline.addWidget(self._brief_verdict, 1)
 
         score_box = QVBoxLayout()
@@ -290,14 +300,14 @@ class ReportsView(QWidget):
         score_box.addWidget(_small_label("Report readiness"))
         self._readiness_score = QLabel("0%")
         self._readiness_score.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._readiness_score.setStyleSheet("font-size: 28px; font-weight: 900; color: #00f0ff;")
+        style(self._readiness_score, lambda p: f"font-size: 28px; font-weight: 900; color: {p.accent};")
         score_box.addWidget(self._readiness_score)
         headline.addLayout(score_box)
         layout.addLayout(headline)
 
         self._brief_narrative = QLabel("Run diagnostics or simulations to generate a report brief.")
         self._brief_narrative.setWordWrap(True)
-        self._brief_narrative.setStyleSheet("font-size: 13px; color: #cbd5e1; line-height: 1.5;")
+        style(self._brief_narrative, lambda p: f"font-size: 13px; color: {p.text_soft}; line-height: 1.5;")
         layout.addWidget(self._brief_narrative)
 
         grid = QGridLayout()
@@ -305,22 +315,22 @@ class ReportsView(QWidget):
         self._brief_metrics: dict[str, QLabel] = {}
         for idx, key in enumerate(("score", "signal", "isp", "recommendation")):
             mini = QFrame()
-            mini.setStyleSheet("""
-                QFrame {
-                    background-color: #080a10;
-                    border: 1px solid #121524;
+            style(mini, lambda p: f"""
+                QFrame {{
+                    background-color: {p.surface};
+                    border: 1px solid {p.border};
                     border-radius: 8px;
                     padding: 10px;
-                }
+                }}
             """)
             ml = QVBoxLayout(mini)
             ml.setContentsMargins(12, 10, 12, 10)
             ml.setSpacing(4)
             label = QLabel(key.replace("_", " ").upper())
-            label.setStyleSheet("font-size: 10px; font-weight: 800; color: #475569; letter-spacing: 0.6px;")
+            style(label, lambda p: f"font-size: 10px; font-weight: 800; color: {p.text_faint}; letter-spacing: 0.6px;")
             value = QLabel("No data")
             value.setWordWrap(True)
-            value.setStyleSheet("font-size: 13px; font-weight: 800; color: #e2e8f0;")
+            style(value, lambda p: f"font-size: 13px; font-weight: 800; color: {p.text};")
             ml.addWidget(label)
             ml.addWidget(value)
             self._brief_metrics[key] = value
@@ -342,14 +352,14 @@ class ReportsView(QWidget):
         heading.addWidget(_section_label("MARKDOWN PREVIEW"))
         heading.addStretch()
         self._generated_at = QLabel("Not generated")
-        self._generated_at.setStyleSheet("font-size: 11px; color: #475569;")
+        style(self._generated_at, lambda p: f"font-size: 11px; color: {p.text_faint};")
         heading.addWidget(self._generated_at)
         layout.addLayout(heading)
 
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
         self._preview.setMinimumHeight(300)
-        self._preview.setStyleSheet(CONTROL_STYLE)
+        style(self._preview, control_style)
         layout.addWidget(self._preview)
         return card
 
@@ -358,7 +368,7 @@ class ReportsView(QWidget):
         layout.addWidget(_section_label("EVIDENCE INVENTORY"))
 
         self._evidence_window = QLabel("No window selected")
-        self._evidence_window.setStyleSheet("font-size: 12px; color: #64748b;")
+        style(self._evidence_window, lambda p: f"font-size: 12px; color: {p.text_muted};")
         layout.addWidget(self._evidence_window)
 
         self._evidence_values: dict[str, QLabel] = {}
@@ -371,10 +381,10 @@ class ReportsView(QWidget):
             row = QHBoxLayout()
             row.setSpacing(10)
             name = QLabel(label)
-            name.setStyleSheet("font-size: 13px; font-weight: 700; color: #e2e8f0;")
+            style(name, lambda p: f"font-size: 13px; font-weight: 700; color: {p.text};")
             value = QLabel("0")
             value.setAlignment(Qt.AlignmentFlag.AlignRight)
-            value.setStyleSheet("font-size: 16px; font-weight: 900; color: #00f0ff;")
+            style(value, lambda p: f"font-size: 16px; font-weight: 900; color: {p.accent};")
             row.addWidget(name)
             row.addStretch()
             row.addWidget(value)
@@ -397,10 +407,10 @@ class ReportsView(QWidget):
             ("export", "Export payload"),
         ]:
             label = QLabel(title.upper())
-            label.setStyleSheet("font-size: 10px; font-weight: 800; color: #475569; letter-spacing: 0.7px;")
+            style(label, lambda p: f"font-size: 10px; font-weight: 800; color: {p.text_faint}; letter-spacing: 0.7px;")
             value = QLabel("No data")
             value.setWordWrap(True)
-            value.setStyleSheet("font-size: 13px; color: #cbd5e1;")
+            style(value, lambda p: f"font-size: 13px; color: {p.text_soft};")
             layout.addWidget(label)
             layout.addWidget(value)
             self._shape_labels[key] = value
@@ -456,6 +466,7 @@ class ReportsView(QWidget):
         return self._section_checks[key].isChecked()
 
     def _analyze_current_packet(self) -> dict:
+        p = theme_manager.palette
         diags = self._filter_by_window(self._diag_rows)
         sims = self._filter_by_window(self._sim_rows)
         fixes = self._filter_by_window(self._policy_rows)
@@ -478,10 +489,10 @@ class ReportsView(QWidget):
             if (r.get("isp_verdict") or "") not in ("", "healthy", "local_congestion")
         ]
         fixes_verified = [
-            p for p in fixes
-            if p.get("score_after") is not None and _number(p.get("score_after")) < _number(p.get("score_before"))
+            p_row for p_row in fixes
+            if p_row.get("score_after") is not None and _number(p_row.get("score_after")) < _number(p_row.get("score_before"))
         ]
-        rollbacks = [p for p in fixes if p.get("rolled_back_at")]
+        rollbacks = [p_row for p_row in fixes if p_row.get("rolled_back_at")]
 
         readiness = 0
         if diags:
@@ -497,16 +508,16 @@ class ReportsView(QWidget):
 
         if not diags and not sims and not fixes:
             verdict = "No Evidence"
-            color = "#64748b"
+            color_fn = lambda p: p.text_muted
         elif highest_severity in ("SEVERE", "CRITICAL") or degraded_isp:
             verdict = "Action Needed"
-            color = "#ef4444" if highest_severity == "CRITICAL" else "#f97316"
+            color_fn = lambda p, hs=highest_severity: p.danger if hs == "CRITICAL" else p.orange
         elif highest_severity == "MODERATE":
             verdict = "Watch Closely"
-            color = "#f59e0b"
+            color_fn = lambda p: p.warning
         else:
             verdict = "Stable"
-            color = "#00e5a3"
+            color_fn = lambda p: p.success
 
         span_times = [
             _number(r.get("timestamp")) for r in (diags + sims + fixes)
@@ -532,7 +543,8 @@ class ReportsView(QWidget):
             "rollbacks": rollbacks,
             "readiness": min(readiness, 100),
             "verdict": verdict,
-            "verdict_color": color,
+            "verdict_color": color_fn(p),
+            "verdict_color_fn": color_fn,
             "span": span,
             "findings": self._make_findings(
                 diags, sims, fixes, latest, avg_score, high_runs,
@@ -551,8 +563,11 @@ class ReportsView(QWidget):
         degraded_isp: list[dict],
         fixes_verified: list[dict],
         rollbacks: list[dict],
-    ) -> list[tuple[str, str, str]]:
-        findings: list[tuple[str, str, str]] = []
+    ) -> list[tuple[str, str, Any]]:
+        p = theme_manager.palette
+        isp_display = isp_verdict_display(p)
+
+        findings: list[tuple[str, str, Any]] = []
         if latest:
             sev = latest.get("severity") or "NONE"
             score = _number(latest.get("congestion_score"))
@@ -560,63 +575,69 @@ class ReportsView(QWidget):
             findings.append((
                 f"Latest diagnostic is {sev}",
                 f"Score {score:.0f}; dominant signal: {signal}.",
-                SEVERITY_COLORS.get(sev, "#64748b"),
+                lambda p, s=sev: severity_colors(p).get(s, p.text_muted),
             ))
         if avg_score is not None:
             findings.append((
                 "Period congestion average",
                 f"{avg_score:.1f} across {len(diags)} diagnostic run(s).",
-                "#00f0ff" if avg_score < 20 else "#f59e0b",
+                lambda p, avg=avg_score: p.accent if avg < 20 else p.warning,
             ))
         if high_runs:
             findings.append((
                 "Elevated runs need attention",
                 f"{high_runs} run(s) landed in HIGH or CRITICAL severity.",
-                "#ef4444",
+                lambda p: p.danger,
             ))
         if degraded_isp:
-            verdict_text, _ = ISP_VERDICT_DISPLAY.get(
+            verdict_text, _ = isp_display.get(
                 degraded_isp[0].get("isp_verdict") or "",
-                (_clean(degraded_isp[0].get("isp_verdict"), "Unknown"), "#ef4444"),
+                (_clean(degraded_isp[0].get("isp_verdict"), "Unknown"), p.danger),
             )
             findings.append((
                 "ISP path degradation detected",
                 f"{verdict_text} appears in {len(degraded_isp)} diagnostic run(s).",
-                "#f97316",
+                lambda p: p.orange,
             ))
         if fixes_verified:
             findings.append((
                 "Fix impact is measurable",
                 f"{len(fixes_verified)} applied fix(es) have lower after-scores than before-scores.",
-                "#00e5a3",
+                lambda p: p.success,
             ))
         if rollbacks:
             findings.append((
                 "Rollback history exists",
                 f"{len(rollbacks)} policy change(s) were rolled back.",
-                "#f59e0b",
+                lambda p: p.warning,
             ))
         if sims:
             best = max(sims, key=lambda r: _number(r.get("throughput_mbps")))
+            algo_name = best.get("algorithm")
             findings.append((
                 "Best simulated throughput",
                 f"{best.get('algorithm') or 'Unknown'} reached "
                 f"{_number(best.get('throughput_mbps')):.2f} Mbps in "
                 f"{_clean(best.get('scenario'), 'Unknown scenario')}.",
-                ALGO_COLORS.get(best.get("algorithm"), "#a78bfa"),
+                lambda p, a=algo_name: algo_colors(p).get(a, p.purple),
             ))
         if not findings:
             findings.append((
                 "No report evidence yet",
                 "Run a diagnostic, simulation, or approved fix to seed this brief.",
-                "#64748b",
+                lambda p: p.text_muted,
             ))
         return findings[:5]
 
     def _populate_brief(self, analysis: dict):
+        p = theme_manager.palette
+        isp_display = isp_verdict_display(p)
+
         self._brief_verdict.setText(analysis["verdict"])
-        self._brief_verdict.setStyleSheet(
-            f"font-size: 28px; font-weight: 900; color: {analysis['verdict_color']};"
+        verdict_color_fn = analysis.get("verdict_color_fn", lambda p: p.accent)
+        style(
+            self._brief_verdict,
+            lambda p, fn=verdict_color_fn: f"font-size: 28px; font-weight: 900; color: {fn(p)};"
         )
         self._readiness_score.setText(f"{analysis['readiness']}%")
 
@@ -626,9 +647,9 @@ class ReportsView(QWidget):
             sev = latest.get("severity") or "NONE"
             signal = _clean(latest.get("dominant_signal"), "No dominant signal")
             algo = latest.get("recommended_algo") or "No algorithm needed"
-            verdict_text, _ = ISP_VERDICT_DISPLAY.get(
+            verdict_text, _ = isp_display.get(
                 latest.get("isp_verdict") or "",
-                (_clean(latest.get("isp_verdict"), "Unknown"), "#64748b"),
+                (_clean(latest.get("isp_verdict"), "Unknown"), p.text_muted),
             )
             self._brief_narrative.setText(
                 f"For {analysis['window'].lower()}, the report packet reads as {analysis['verdict'].lower()}. "
@@ -645,19 +666,20 @@ class ReportsView(QWidget):
                 value.setText("No data")
 
     def _populate_findings(self, analysis: dict):
+        p = theme_manager.palette
         while self._findings_layout.count():
             item = self._findings_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
 
-        for title, body, color in analysis["findings"]:
+        for title, body, color_fn in analysis["findings"]:
             frame = QFrame()
-            frame.setStyleSheet(f"""
+            style(frame, lambda p, fn=color_fn: f"""
                 QFrame {{
-                    background-color: #080a10;
-                    border: 1px solid #121524;
-                    border-left: 4px solid {color};
+                    background-color: {p.surface};
+                    border: 1px solid {p.border};
+                    border-left: 4px solid {fn(p)};
                     border-radius: 8px;
                 }}
             """)
@@ -665,10 +687,10 @@ class ReportsView(QWidget):
             layout.setContentsMargins(14, 10, 14, 10)
             layout.setSpacing(4)
             t = QLabel(title)
-            t.setStyleSheet("font-size: 13px; font-weight: 800; color: #ffffff;")
+            style(t, lambda p: f"font-size: 13px; font-weight: 800; color: {p.text_strong};")
             b = QLabel(body)
             b.setWordWrap(True)
-            b.setStyleSheet("font-size: 12px; color: #94a3b8;")
+            style(b, lambda p: f"font-size: 12px; color: {p.text_secondary};")
             layout.addWidget(t)
             layout.addWidget(b)
             self._findings_layout.addWidget(frame)
@@ -706,6 +728,9 @@ class ReportsView(QWidget):
         self._shape_labels["export"].setText(", ".join(sections) if sections else "No sections selected")
 
     def _build_report_text(self, analysis: dict) -> str:
+        p = theme_manager.palette
+        isp_display = isp_verdict_display(p)
+
         lines = [
             "# SariChesko Network Evidence Brief",
             f"Generated: {_fmt_time(time.time())}",
@@ -724,9 +749,9 @@ class ReportsView(QWidget):
             ])
             latest = analysis["latest"]
             if latest:
-                verdict_text, _ = ISP_VERDICT_DISPLAY.get(
+                verdict_text, _ = isp_display.get(
                     latest.get("isp_verdict") or "",
-                    (_clean(latest.get("isp_verdict"), "Unknown"), "#64748b"),
+                    (_clean(latest.get("isp_verdict"), "Unknown"), p.text_muted),
                 )
                 lines.extend([
                     f"- Latest run: {_fmt_time(latest.get('timestamp'))}",

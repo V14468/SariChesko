@@ -1,6 +1,7 @@
+from typing import Callable, Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QComboBox, QProgressBar, QGraphicsOpacityEffect, QScrollArea,
+    QFrame, QComboBox, QProgressBar, QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 
@@ -12,25 +13,27 @@ from ...platform import get_monitor, get_controller
 from ...core.diagnostics_engine import DiagnosticsWorker, DiagnosticResult
 from ...core.recommendation_engine import Algorithm
 from ...core.traffic_control_manager import ApplyFixWorker, RollbackWorker
+from ..theme import theme_manager, Palette, style
 
 
-ALGO_COLORS = {
-    Algorithm.LEAKY_BUCKET: "#00f0ff",
-    Algorithm.TOKEN_BUCKET: "#a78bfa",
-    Algorithm.RED: "#f59e0b",
-    Algorithm.CODEL: "#00e5a3",
-}
+def algo_colors(p: Palette) -> dict:
+    return {
+        Algorithm.LEAKY_BUCKET: p.accent,
+        Algorithm.TOKEN_BUCKET: p.purple,
+        Algorithm.RED: p.warning,
+        Algorithm.CODEL: p.success,
+    }
 
 
 class DiagnoseView(QWidget):
     def __init__(self):
         super().__init__()
-        self._worker: DiagnosticsWorker = None
-        self._apply_worker: ApplyFixWorker = None
-        self._rollback_worker: RollbackWorker = None
+        self._worker: Optional[DiagnosticsWorker] = None
+        self._apply_worker: Optional[ApplyFixWorker] = None
+        self._rollback_worker: Optional[RollbackWorker] = None
         self._monitor = get_monitor()
         self._controller = get_controller()
-        self._current_result: DiagnosticResult = None
+        self._current_result: Optional[DiagnosticResult] = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 16)
@@ -41,9 +44,9 @@ class DiagnoseView(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(1)
         title = QLabel("Network Diagnostics")
-        title.setStyleSheet("font-size: 24px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 24px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("ISP probe · Congestion scoring · Algorithm recommendation")
-        subtitle.setStyleSheet("font-size: 12px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 12px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -93,15 +96,15 @@ class DiagnoseView(QWidget):
 
         # Progress bar (compact)
         self._progress_label = QLabel("Ready to run diagnostic")
-        self._progress_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(self._progress_label, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setFixedHeight(4)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet("""
-            QProgressBar { background-color: #121420; border: none; border-radius: 2px; }
-            QProgressBar::chunk { background-color: #00f0ff; border-radius: 2px; }
+        style(self._progress_bar, lambda p: f"""
+            QProgressBar {{ background-color: {p.track}; border: none; border-radius: 2px; }}
+            QProgressBar::chunk {{ background-color: {p.accent}; border-radius: 2px; }}
         """)
         self._progress_bar.setValue(0)
         layout.addWidget(self._progress_bar)
@@ -124,7 +127,7 @@ class DiagnoseView(QWidget):
         gauge_layout.setSpacing(4)
 
         gauge_title = QLabel("CONGESTION SCORE")
-        gauge_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(gauge_title, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         gauge_layout.addWidget(gauge_title)
 
         self._gauge = CongestionGaugeWidget()
@@ -156,25 +159,25 @@ class DiagnoseView(QWidget):
 
         rec_header_row = QHBoxLayout()
         rec_title = QLabel("RECOMMENDATION")
-        rec_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(rec_title, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         rec_header_row.addWidget(rec_title)
         rec_header_row.addStretch()
         self._confidence_label = QLabel("")
-        self._confidence_label.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b;")
+        style(self._confidence_label, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted};")
         rec_header_row.addWidget(self._confidence_label)
         rec_left.addLayout(rec_header_row)
 
         self._algo_label = QLabel("—")
-        self._algo_label.setStyleSheet("font-size: 22px; font-weight: 800; color: #00f0ff;")
+        style(self._algo_label, lambda p: f"font-size: 22px; font-weight: 800; color: {p.accent};")
         rec_left.addWidget(self._algo_label)
 
         self._reason_label = QLabel("")
-        self._reason_label.setStyleSheet("font-size: 12px; color: #e2e8f0;")
+        style(self._reason_label, lambda p: f"font-size: 12px; color: {p.text};")
         self._reason_label.setWordWrap(True)
         rec_left.addWidget(self._reason_label)
 
         self._actions_label = QLabel("")
-        self._actions_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        style(self._actions_label, lambda p: f"font-size: 11px; color: {p.text_secondary};")
         self._actions_label.setWordWrap(True)
         rec_left.addWidget(self._actions_label)
 
@@ -189,7 +192,7 @@ class DiagnoseView(QWidget):
         apply_row.addWidget(self._btn_apply_fix)
 
         self._apply_status_label = QLabel("")
-        self._apply_status_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        style(self._apply_status_label, lambda p: f"font-size: 11px; color: {p.text_secondary};")
         self._apply_status_label.setWordWrap(True)
         apply_row.addWidget(self._apply_status_label, 1)
         rec_left.addLayout(apply_row)
@@ -205,23 +208,24 @@ class DiagnoseView(QWidget):
         sum_layout.setSpacing(24)
 
         self._stat_values = {}
-        for key, label_text, unit, color in [
-            ("latency", "Avg Latency", "ms", "#00f0ff"),
-            ("loss", "Avg Loss", "%", "#ef4444"),
-            ("bandwidth", "Avg Bandwidth", "Mbps", "#a78bfa"),
-            ("jitter", "Avg Jitter", "ms", "#f59e0b"),
-        ]:
+        metric_configs: list[tuple[str, str, str, Callable[[Palette], str]]] = [
+            ("latency", "Avg Latency", "ms", lambda p: p.accent),
+            ("loss", "Avg Loss", "%", lambda p: p.danger),
+            ("bandwidth", "Avg Bandwidth", "Mbps", lambda p: p.purple),
+            ("jitter", "Avg Jitter", "ms", lambda p: p.warning),
+        ]
+        for key, label_text, unit, col_fn in metric_configs:
             col = QVBoxLayout()
             col.setSpacing(2)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b;")
+            style(lbl, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted};")
 
             val_row = QHBoxLayout()
             val_row.setSpacing(3)
             val = QLabel("—")
-            val.setStyleSheet(f"font-size: 20px; font-weight: 800; color: {color};")
+            style(val, lambda p, fn=col_fn: f"font-size: 20px; font-weight: 800; color: {fn(p)};")
             u_lbl = QLabel(unit)
-            u_lbl.setStyleSheet(f"font-size: 11px; color: {color}; padding-top: 6px;")
+            style(u_lbl, lambda p, fn=col_fn: f"font-size: 11px; color: {fn(p)}; padding-top: 6px;")
             val_row.addWidget(val)
             val_row.addWidget(u_lbl)
             val_row.addStretch()
@@ -246,17 +250,24 @@ class DiagnoseView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
+        theme_manager.changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, _name: str):
+        if self._current_result is not None:
+            self._on_complete(self._current_result)
+
     def _run_diagnostic(self):
         iface = self._iface_combo.currentData()
         if not iface:
             return
 
+        p = theme_manager.palette
         self._btn_run.setEnabled(False)
         self._btn_run.setText("Running...")
         self._results_widget.setVisible(False)
         self._progress_bar.setValue(0)
         self._progress_label.setText("Starting diagnostic...")
-        self._progress_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        self._progress_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
 
         self._worker = DiagnosticsWorker(iface)
         self._worker.progress.connect(self._on_progress)
@@ -270,6 +281,7 @@ class DiagnoseView(QWidget):
         self._progress_bar.setValue(value)
 
     def _on_complete(self, result: DiagnosticResult):
+        p = theme_manager.palette
         self._btn_run.setEnabled(True)
         self._btn_run.setText("Run Full Diagnostic")
         self._progress_label.setText("Diagnostic complete!")
@@ -282,7 +294,7 @@ class DiagnoseView(QWidget):
 
         rec = result.recommendation
         if rec.algo:
-            color = ALGO_COLORS.get(rec.algo, "#00f0ff")
+            color = algo_colors(p).get(rec.algo, p.accent)
             self._algo_label.setText(rec.algo.value)
             self._algo_label.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {color};")
             self._btn_apply_fix.setVisible(True)
@@ -294,13 +306,13 @@ class DiagnoseView(QWidget):
                 )
         else:
             self._algo_label.setText("No Algorithm Needed")
-            self._algo_label.setStyleSheet("font-size: 22px; font-weight: 800; color: #00e5a3;")
+            self._algo_label.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {p.success};")
             self._btn_apply_fix.setVisible(False)
 
-        conf_colors = {"HIGH": "#00e5a3", "MEDIUM": "#f59e0b", "LOW": "#ef4444"}
+        conf_colors = {"HIGH": p.success, "MEDIUM": p.warning, "LOW": p.danger}
         self._confidence_label.setText(f"Confidence: {rec.confidence}")
         self._confidence_label.setStyleSheet(
-            f"font-size: 10px; font-weight: 700; color: {conf_colors.get(rec.confidence, '#64748b')};"
+            f"font-size: 10px; font-weight: 700; color: {conf_colors.get(rec.confidence, p.text_muted)};"
         )
 
         self._reason_label.setText(rec.reason)
@@ -318,10 +330,11 @@ class DiagnoseView(QWidget):
         self._results_widget.setVisible(True)
 
     def _on_error(self, msg: str):
+        p = theme_manager.palette
         self._btn_run.setEnabled(True)
         self._btn_run.setText("Run Full Diagnostic")
         self._progress_label.setText(f"Error: {msg}")
-        self._progress_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #ef4444;")
+        self._progress_label.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {p.danger};")
 
     # --- Apply Fix (human-in-the-loop) ---
     def _on_apply_fix_clicked(self):
@@ -336,19 +349,15 @@ class DiagnoseView(QWidget):
         supported = self._controller.is_algorithm_supported(algo.value)
         unsupported_message = ""
         if not supported:
-            # These calls are side-effect-free when unsupported (the platform
-            # controllers return a fixed explanatory ApplyResult immediately,
-            # without touching the OS) -- safe to call just to get the exact
-            # wording, so the dialog and the real apply path never disagree.
-            p = rec.parameters
+            p_params = rec.parameters
             if algo == Algorithm.LEAKY_BUCKET:
-                unsupported_message = self._controller.apply_leaky_bucket(iface, p["rate_bps"], p["burst_bytes"]).message
+                unsupported_message = self._controller.apply_leaky_bucket(iface, p_params["rate_bps"], p_params["burst_bytes"]).message
             elif algo == Algorithm.TOKEN_BUCKET:
-                unsupported_message = self._controller.apply_token_bucket(iface, p["rate_bps"], p["burst_bytes"], p["latency_ms"]).message
+                unsupported_message = self._controller.apply_token_bucket(iface, p_params["rate_bps"], p_params["burst_bytes"], p_params["latency_ms"]).message
             elif algo == Algorithm.RED:
-                unsupported_message = self._controller.apply_red(iface, p["min_th"], p["max_th"], p["max_p"], p["limit"]).message
+                unsupported_message = self._controller.apply_red(iface, p_params["min_th"], p_params["max_th"], p_params["max_p"], p_params["limit"]).message
             elif algo == Algorithm.CODEL:
-                unsupported_message = self._controller.apply_codel(iface, p["target_ms"], p["interval_ms"], p["limit"]).message
+                unsupported_message = self._controller.apply_codel(iface, p_params["target_ms"], p_params["interval_ms"], p_params["limit"]).message
 
         dialog = PermissionDialog(
             iface=iface,
@@ -372,7 +381,7 @@ class DiagnoseView(QWidget):
 
         self._btn_apply_fix.setEnabled(False)
         self._apply_status_label.setText("Applying fix...")
-        self._apply_status_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {theme_manager.palette.text_secondary};")
 
         self._apply_worker = ApplyFixWorker(
             iface=iface,
@@ -393,15 +402,16 @@ class DiagnoseView(QWidget):
         self._apply_status_label.setText(text)
 
     def _on_apply_complete(self, report):
+        p = theme_manager.palette
         self._btn_apply_fix.setEnabled(True)
 
         if not report.applied:
             self._apply_status_label.setText(f"Not applied: {report.apply_message}")
-            self._apply_status_label.setStyleSheet("font-size: 11px; color: #ef4444;")
+            self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {p.danger};")
             return
 
         self._apply_status_label.setText(report.apply_message)
-        self._apply_status_label.setStyleSheet("font-size: 11px; color: #00e5a3;")
+        self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {p.success};")
 
         algo_name = self._current_result.recommendation.algo.value if self._current_result.recommendation.algo else "Fix"
         dialog = RollbackDialog(
@@ -420,7 +430,7 @@ class DiagnoseView(QWidget):
 
         if dialog.rollback_requested and report.policy_id and report.snapshot:
             self._apply_status_label.setText("Rolling back...")
-            self._apply_status_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
+            self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {p.text_secondary};")
             self._rollback_worker = RollbackWorker(report.policy_id, report.snapshot)
             self._rollback_worker.complete.connect(self._on_rollback_complete)
             self._rollback_worker.error.connect(self._on_apply_error)
@@ -428,14 +438,15 @@ class DiagnoseView(QWidget):
             self._rollback_worker.start()
 
     def _on_rollback_complete(self, result):
+        p = theme_manager.palette
         if result.success:
             self._apply_status_label.setText("Rolled back: " + result.message)
-            self._apply_status_label.setStyleSheet("font-size: 11px; color: #94a3b8;")
+            self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {p.text_secondary};")
         else:
             self._apply_status_label.setText("Rollback failed: " + result.message)
-            self._apply_status_label.setStyleSheet("font-size: 11px; color: #ef4444;")
+            self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {p.danger};")
 
     def _on_apply_error(self, msg: str):
         self._btn_apply_fix.setEnabled(True)
         self._apply_status_label.setText(f"Error: {msg}")
-        self._apply_status_label.setStyleSheet("font-size: 11px; color: #ef4444;")
+        self._apply_status_label.setStyleSheet(f"font-size: 11px; color: {theme_manager.palette.danger};")

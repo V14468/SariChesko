@@ -1,6 +1,7 @@
 import time
 import uuid
 import json
+from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QComboBox, QProgressBar, QGraphicsOpacityEffect,
@@ -9,23 +10,26 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation, QEasingCurve
 
 from ..widgets.algo_comparison_chart import AlgoBarChartWidget
+from ..widgets.engine_selector import EngineSelector
 from ...simulation.engine_base import SimConfig, AlgorithmType, SimulationResult
-from ...simulation.python_sim import PythonSimulationEngine
 from ...simulation.scenarios.base_scenario import SCENARIOS
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
 from ...storage.models import SimulationResult as SimResultModel
 from ...utils.export import export_rows_to_csv, default_export_dir
+from ..theme import theme_manager, Palette, style
 
 
 ALGOS = [AlgorithmType.LEAKY_BUCKET, AlgorithmType.TOKEN_BUCKET, AlgorithmType.RED, AlgorithmType.CODEL]
 
-ALGO_COLORS = {
-    "Leaky Bucket": "#00f0ff",
-    "Token Bucket": "#a78bfa",
-    "RED": "#f59e0b",
-    "CoDel": "#00e5a3",
-}
+
+def algo_colors(p: Palette) -> dict:
+    return {
+        "Leaky Bucket": p.accent,
+        "Token Bucket": p.purple,
+        "RED": p.warning,
+        "CoDel": p.success,
+    }
 
 
 class CompareWorker(QThread):
@@ -36,16 +40,16 @@ class CompareWorker(QThread):
     complete = Signal(dict)   # {algo_value: SimulationResult}
     error = Signal(str)
 
-    def __init__(self, scenario: str, duration_s: float, link_mbps: float, queue_size: int):
+    def __init__(self, scenario: str, duration_s: float, link_mbps: float, queue_size: int, engine):
         super().__init__()
         self._scenario = scenario
         self._duration = duration_s
         self._link = link_mbps
         self._queue = queue_size
+        self._engine = engine
 
     def run(self):
         try:
-            engine = PythonSimulationEngine()
             results: dict[str, SimulationResult] = {}
             for i, algo in enumerate(ALGOS):
                 pct = int((i / len(ALGOS)) * 90) + 5
@@ -57,7 +61,7 @@ class CompareWorker(QThread):
                     link_bandwidth_mbps=self._link,
                     queue_size=self._queue,
                 )
-                results[algo.value] = engine.run(config)
+                results[algo.value] = self._engine.run(config)
             self.progress.emit("Comparison complete!", 100)
             self.complete.emit(results)
         except Exception as e:
@@ -92,13 +96,13 @@ def _composite_scores(current: dict) -> dict:
 class CompareAlgorithmsView(QWidget):
     def __init__(self):
         super().__init__()
-        self._worker: CompareWorker = None
+        self._worker: Optional[CompareWorker] = None
         self._current: dict[str, dict] = {}   # algo_name -> {throughput, latency, loss, fairness, engine, timestamp}
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -110,9 +114,9 @@ class CompareAlgorithmsView(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
         title = QLabel("Compare Algorithms")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Run the same synthetic traffic through all four approaches to see which fits best")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -135,11 +139,11 @@ class CompareAlgorithmsView(QWidget):
         config_layout.setSpacing(16)
 
         config_title = QLabel("COMPARISON PARAMETERS")
-        config_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(config_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         config_layout.addWidget(config_title)
 
         self._scenario_desc = QLabel("")
-        self._scenario_desc.setStyleSheet("font-size: 12px; color: #475569;")
+        style(self._scenario_desc, lambda p: f"font-size: 12px; color: {p.text_faint};")
         self._scenario_desc.setWordWrap(True)
 
         params_row = QHBoxLayout()
@@ -148,7 +152,7 @@ class CompareAlgorithmsView(QWidget):
         scen_col = QVBoxLayout()
         scen_col.setSpacing(4)
         lbl_s = QLabel("Scenario")
-        lbl_s.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_s, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         scen_col.addWidget(lbl_s)
         self._scenario_combo = QComboBox()
         self._scenario_combo.setFixedHeight(36)
@@ -162,7 +166,7 @@ class CompareAlgorithmsView(QWidget):
         dur_col = QVBoxLayout()
         dur_col.setSpacing(4)
         lbl_d = QLabel("Duration (s)")
-        lbl_d.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_d, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         dur_col.addWidget(lbl_d)
         self._duration_spin = QSpinBox()
         self._duration_spin.setRange(1, 15)
@@ -174,7 +178,7 @@ class CompareAlgorithmsView(QWidget):
         bw_col = QVBoxLayout()
         bw_col.setSpacing(4)
         lbl_b = QLabel("Link (Mbps)")
-        lbl_b.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_b, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         bw_col.addWidget(lbl_b)
         self._bw_spin = QSpinBox()
         self._bw_spin.setRange(1, 1000)
@@ -186,7 +190,7 @@ class CompareAlgorithmsView(QWidget):
         qs_col = QVBoxLayout()
         qs_col.setSpacing(4)
         lbl_q = QLabel("Queue Size")
-        lbl_q.setStyleSheet("font-size: 12px; font-weight: 600; color: #94a3b8;")
+        style(lbl_q, lambda p: f"font-size: 12px; font-weight: 600; color: {p.text_secondary};")
         qs_col.addWidget(lbl_q)
         self._queue_spin = QSpinBox()
         self._queue_spin.setRange(10, 1000)
@@ -197,6 +201,10 @@ class CompareAlgorithmsView(QWidget):
 
         config_layout.addLayout(params_row)
         config_layout.addWidget(self._scenario_desc)
+
+        # Engine selector
+        self._engine_selector = EngineSelector()
+        config_layout.addWidget(self._engine_selector)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -219,15 +227,15 @@ class CompareAlgorithmsView(QWidget):
         prog_layout.setSpacing(8)
 
         self._progress_label = QLabel("")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #94a3b8;")
+        style(self._progress_label, lambda p: f"font-size: 13px; font-weight: 600; color: {p.text_secondary};")
         prog_layout.addWidget(self._progress_label)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setFixedHeight(4)
         self._progress_bar.setTextVisible(False)
-        self._progress_bar.setStyleSheet("""
-            QProgressBar { background-color: #121420; border: none; border-radius: 2px; }
-            QProgressBar::chunk { background-color: #a78bfa; border-radius: 2px; }
+        style(self._progress_bar, lambda p: f"""
+            QProgressBar {{ background-color: {p.track}; border: none; border-radius: 2px; }}
+            QProgressBar::chunk {{ background-color: {p.purple}; border-radius: 2px; }}
         """)
         prog_layout.addWidget(self._progress_bar)
         layout.addWidget(self._progress_frame)
@@ -241,15 +249,15 @@ class CompareAlgorithmsView(QWidget):
         wl.setSpacing(6)
 
         wl_title = QLabel("BEST FIT FOR THIS SCENARIO")
-        wl_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(wl_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         wl.addWidget(wl_title)
 
         self._winner_label = QLabel("—")
-        self._winner_label.setStyleSheet("font-size: 22px; font-weight: 800; color: #00f0ff;")
+        style(self._winner_label, lambda p: f"font-size: 22px; font-weight: 800; color: {p.accent};")
         wl.addWidget(self._winner_label)
 
         self._winner_reason = QLabel("")
-        self._winner_reason.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        style(self._winner_reason, lambda p: f"font-size: 12px; color: {p.text_secondary};")
         self._winner_reason.setWordWrap(True)
         wl.addWidget(self._winner_reason)
 
@@ -257,11 +265,24 @@ class CompareAlgorithmsView(QWidget):
             "Comparative ranking for this simulated scenario only — it is not the same as the live "
             "network diagnosis recommendation, which also weighs real ISP and queueing evidence."
         )
-        disclaimer.setStyleSheet("font-size: 10px; color: #475569; font-style: italic;")
+        style(disclaimer, lambda p: f"font-size: 10px; color: {p.text_faint}; font-style: italic;")
         disclaimer.setWordWrap(True)
         wl.addWidget(disclaimer)
 
         layout.addWidget(self._winner_card)
+
+        # Mixed-engines warning
+        self._mixed_engines_label = QLabel(
+            "\u26a0 Mixed engines \u2014 results are not directly comparable"
+        )
+        style(self._mixed_engines_label, lambda p: (
+            f"font-size: 12px; font-weight: 600; color: {p.warning}; "
+            f"background: {p.warning_bg}; border: 1px solid {p.warning}; "
+            f"border-radius: 6px; padding: 8px 12px;"
+        ))
+        self._mixed_engines_label.setWordWrap(True)
+        self._mixed_engines_label.setVisible(False)
+        layout.addWidget(self._mixed_engines_label)
 
         # Chart grid (one small-multiple per metric)
         self._charts_widget = QWidget()
@@ -294,7 +315,7 @@ class CompareAlgorithmsView(QWidget):
         tl.setSpacing(10)
 
         table_title = QLabel("EXACT VALUES")
-        table_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(table_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         tl.addWidget(table_title)
 
         self._table_grid = QGridLayout()
@@ -321,6 +342,7 @@ class CompareAlgorithmsView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
+        theme_manager.changed.connect(lambda _: self._render())
         self._load_latest_for_scenario()
 
     def showEvent(self, event):
@@ -372,6 +394,7 @@ class CompareAlgorithmsView(QWidget):
         if not scenario_key:
             return
 
+        p = theme_manager.palette
         self._btn_run.setEnabled(False)
         self._btn_run.setText("Comparing...")
         self._winner_card.setVisible(False)
@@ -380,13 +403,14 @@ class CompareAlgorithmsView(QWidget):
         self._progress_frame.setVisible(True)
         self._progress_bar.setValue(0)
         self._progress_label.setText("Starting comparison...")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #94a3b8;")
+        self._progress_label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {p.text_secondary};")
 
         self._worker = CompareWorker(
             scenario=scenario_key,
             duration_s=self._duration_spin.value(),
             link_mbps=self._bw_spin.value(),
             queue_size=self._queue_spin.value(),
+            engine=self._engine_selector.build_engine(),
         )
         self._worker.progress.connect(self._on_progress)
         self._worker.complete.connect(self._on_complete)
@@ -456,14 +480,17 @@ class CompareAlgorithmsView(QWidget):
         self._btn_run.setEnabled(True)
         self._btn_run.setText("Run Comparison (all 4 algorithms)")
         self._progress_label.setText(f"Error: {msg}")
-        self._progress_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #ef4444;")
+        self._progress_label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {theme_manager.palette.danger};")
 
     def _render(self):
         if not self._current:
             return
 
+        p = theme_manager.palette
+        algo_c = algo_colors(p)
+
         def entries(key):
-            return [(a, v[key], ALGO_COLORS.get(a, "#00f0ff")) for a, v in self._current.items()]
+            return [(a, v[key], algo_c.get(a, p.accent)) for a, v in self._current.items()]
 
         self._chart_throughput.set_data(entries("throughput"))
         self._chart_latency.set_data(entries("latency"))
@@ -474,14 +501,17 @@ class CompareAlgorithmsView(QWidget):
         scores = _composite_scores(self._current)
         if scores:
             winner = max(scores, key=scores.get)
-            color = ALGO_COLORS.get(winner, "#00f0ff")
             self._winner_label.setText(winner)
-            self._winner_label.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {color};")
+            style(self._winner_label, lambda p, w=winner: f"font-size: 22px; font-weight: 800; color: {algo_colors(p).get(w, p.accent)};")
             self._winner_reason.setText(
                 f"Composite score {scores[winner]:.2f} of 1.00 — best overall balance of throughput, "
                 f"latency, loss, and fairness among the four in this run."
             )
             self._winner_card.setVisible(True)
+
+        # Mixed-engines check
+        engines_used = set(v["engine"] for v in self._current.values())
+        self._mixed_engines_label.setVisible(len(engines_used) > 1)
 
         # Rebuild the exact-values table
         while self._table_grid.count():
@@ -493,13 +523,12 @@ class CompareAlgorithmsView(QWidget):
         headers = ["Algorithm", "Throughput (Mbps)", "Latency (ms)", "Loss (%)", "Fairness", "Score", "Engine"]
         for col, h in enumerate(headers):
             lbl = QLabel(h)
-            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.4px;")
+            style(lbl, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.4px;")
             self._table_grid.addWidget(lbl, 0, col)
 
         for row, (algo_name, v) in enumerate(self._current.items(), start=1):
-            color = ALGO_COLORS.get(algo_name, "#ffffff")
             name_lbl = QLabel(algo_name)
-            name_lbl.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {color};")
+            style(name_lbl, lambda p, a=algo_name: f"font-size: 12px; font-weight: 700; color: {algo_colors(p).get(a, p.text_strong)};")
             self._table_grid.addWidget(name_lbl, row, 0)
 
             values = [f"{v['throughput']:.2f}", f"{v['latency']:.1f}",
@@ -507,7 +536,7 @@ class CompareAlgorithmsView(QWidget):
                       f"{scores.get(algo_name, 0):.3f}", v["engine"]]
             for col, val in enumerate(values, start=1):
                 lbl = QLabel(val)
-                lbl.setStyleSheet("font-size: 12px; color: #e2e8f0;")
+                style(lbl, lambda p: f"font-size: 12px; color: {p.text};")
                 self._table_grid.addWidget(lbl, row, col)
 
         self._table_card.setVisible(True)

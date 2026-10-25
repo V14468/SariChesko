@@ -1,5 +1,6 @@
 import time
 import uuid
+from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QComboBox, QGraphicsOpacityEffect,
@@ -14,13 +15,14 @@ from ...core.congestion_scorer import score_congestion, CongestionScore
 from ...storage.models import Measurement
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
+from ..theme import theme_manager, style
 
 
 class LiveNetworkView(QWidget):
     def __init__(self):
         super().__init__()
-        self._engine: MonitorEngine = None
-        self._session_id: str = None
+        self._engine: Optional[MonitorEngine] = None
+        self._session_id: Optional[str] = None
         self._recent_scores: list[float] = []
         self._monitor = get_monitor()
         self._conn = get_connection()
@@ -38,9 +40,9 @@ class LiveNetworkView(QWidget):
         title_col.setSpacing(2)
 
         title = QLabel("Live Network Monitor")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Real-time interface telemetry and congestion detection")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -87,8 +89,8 @@ class LiveNetworkView(QWidget):
         charts_row = QHBoxLayout()
         charts_row.setSpacing(14)
 
-        self._lat_chart = LatencyChartWidget("Latency", "ms", "#00f0ff")
-        self._loss_chart = LatencyChartWidget("Packet Loss", "%", "#ef4444")
+        self._lat_chart = LatencyChartWidget("Latency", "ms", "accent")
+        self._loss_chart = LatencyChartWidget("Packet Loss", "%", "danger")
         charts_row.addWidget(self._lat_chart)
         charts_row.addWidget(self._loss_chart)
         layout.addLayout(charts_row)
@@ -96,8 +98,8 @@ class LiveNetworkView(QWidget):
         charts_row_2 = QHBoxLayout()
         charts_row_2.setSpacing(14)
 
-        self._bw_chart = LatencyChartWidget("Bandwidth", "Mbps", "#a78bfa")
-        self._jitter_chart = LatencyChartWidget("Jitter", "ms", "#f59e0b")
+        self._bw_chart = LatencyChartWidget("Bandwidth", "Mbps", "purple")
+        self._jitter_chart = LatencyChartWidget("Jitter", "ms", "warning")
         charts_row_2.addWidget(self._bw_chart)
         charts_row_2.addWidget(self._jitter_chart)
         layout.addLayout(charts_row_2)
@@ -112,7 +114,7 @@ class LiveNetworkView(QWidget):
         gauge_layout.setContentsMargins(16, 12, 16, 12)
 
         gauge_title = QLabel("CONGESTION SCORE")
-        gauge_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(gauge_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         gauge_layout.addWidget(gauge_title)
 
         self._gauge = CongestionGaugeWidget()
@@ -127,7 +129,7 @@ class LiveNetworkView(QWidget):
         stats_layout.setSpacing(12)
 
         stats_title = QLabel("LIVE STATS")
-        stats_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(stats_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         stats_layout.addWidget(stats_title)
 
         self._stat_labels = {}
@@ -136,9 +138,9 @@ class LiveNetworkView(QWidget):
                                  ("trend", "Trend"), ("dominant", "Dominant Signal")]:
             row = QHBoxLayout()
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #94a3b8;")
+            style(lbl, lambda p: f"font-size: 13px; font-weight: 600; color: {p.text_secondary};")
             val = QLabel("—")
-            val.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffffff;")
+            style(val, lambda p: f"font-size: 13px; font-weight: 700; color: {p.text_strong};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             row.addWidget(lbl)
             row.addStretch()
@@ -194,10 +196,11 @@ class LiveNetworkView(QWidget):
         self._engine.baseline_established.connect(self._on_baseline)
         self._engine.start()
 
+        p = theme_manager.palette
         self._btn_start.setText("Stop Monitoring")
-        self._btn_start.setStyleSheet("""
-            QPushButton { background-color: #ef4444; color: #000000; border: none; font-weight: 700; border-radius: 8px; }
-            QPushButton:hover { background-color: #f87171; }
+        self._btn_start.setStyleSheet(f"""
+            QPushButton {{ background-color: {p.danger}; color: {p.on_accent}; border: none; font-weight: 700; border-radius: 8px; }}
+            QPushButton:hover {{ background-color: {p.danger_hover}; }}
         """)
 
     def _on_measurement(self, m: Measurement):

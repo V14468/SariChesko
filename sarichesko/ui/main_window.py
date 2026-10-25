@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize
 
+from .theme import style
 from .icon import create_app_icon
 from .views.welcome import WelcomeView
 from .views.dashboard import DashboardView
@@ -50,24 +51,24 @@ class MainWindow(QMainWindow):
 
         # Sidebar Logo Header (Clicking returns to Welcome Screen)
         self.logo_btn = QPushButton("SariChesko")
-        self.logo_btn.setStyleSheet("""
-            QPushButton {
+        style(self.logo_btn, lambda p: f"""
+            QPushButton {{
                 font-size: 22px;
                 font-weight: 800;
-                color: #00f0ff;
+                color: {p.accent};
                 letter-spacing: 1px;
                 background: transparent;
                 border: none;
                 outline: none;
                 text-align: left;
                 padding: 4px 0px;
-            }
-            QPushButton:focus {
+            }}
+            QPushButton:focus {{
                 outline: none;
-            }
-            QPushButton:hover {
-                color: #33f3ff;
-            }
+            }}
+            QPushButton:hover {{
+                color: {p.accent_hover};
+            }}
         """)
 
         self.logo_btn.setIcon(create_app_icon())

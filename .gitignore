@@ -63,3 +63,4 @@ ENV/
 .DS_Store
 Thumbs.db
 *.zip
+theme_check/

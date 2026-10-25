@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -75,6 +76,95 @@ def find_ns3_executable() -> str | None:
 def is_ns3_available() -> bool:
     """Quick boolean check: is a usable ns-3 installation detected?"""
     return find_ns3_executable() is not None
+
+
+# ---------------------------------------------------------------------------
+# ns-3 readiness status (used by the engine selector UI)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass as _dataclass   # noqa: E402  (late import to keep top clean)
+import sys as _sys                                  # noqa: E402
+
+
+@_dataclass
+class Ns3Status:
+    """Structured readiness report for the ns-3 backend.
+
+    state:
+      "unavailable"       – no ns-3 launcher found at all
+      "scenario_missing"  – launcher found, but sarichesko-sim.cc is absent
+      "ready"             – launcher + scenario program both present
+    message:
+      Human-readable explanation of what to do next.
+    launcher:
+      Absolute path to the ns-3 launcher, or None.
+    root:
+      ns-3 root directory (parent of launcher), or None.
+    """
+    state: str           # "unavailable" | "scenario_missing" | "ready"
+    message: str
+    launcher: str | None = None
+    root: Path | None = None
+
+
+def ns3_status() -> Ns3Status:
+    """Probe the system and return the current ns-3 readiness status.
+
+    On Windows (not WSL), ns-3 is effectively unavailable because ns-3
+    does not build natively on Windows.  The UI should say so plainly.
+    """
+    # Windows check — ns-3 doesn't run natively on Windows
+    if _sys.platform == "win32" and "microsoft" not in (
+        os.environ.get("WSL_DISTRO_NAME", "")
+        + os.environ.get("WSLENV", "")
+    ).lower():
+        exe = find_ns3_executable()
+        if exe is None:
+            return Ns3Status(
+                state="unavailable",
+                message=(
+                    "ns-3 is not available on Windows. "
+                    "It runs on Linux or WSL. The built-in Python engine "
+                    "is used instead."
+                ),
+            )
+        # If somehow an ns3 launcher exists on Windows (e.g. WSL path
+        # leaked), continue with the normal checks below.
+
+    exe = find_ns3_executable()
+    if exe is None:
+        return Ns3Status(
+            state="unavailable",
+            message=(
+                "No ns-3 installation found. Set NS3_HOME or NS3_DIR to "
+                "your ns-3 directory, or add ns3 to PATH. "
+                "The built-in Python engine is used instead."
+            ),
+        )
+
+    root = _ns3_root_from_launcher(exe)
+    scratch_src = root / "scratch" / "sarichesko-sim.cc"
+
+    if not scratch_src.is_file():
+        return Ns3Status(
+            state="scenario_missing",
+            message=(
+                f"ns-3 found at {root}, but the SariChesko scenario program "
+                f"is missing. Copy sarichesko-sim.cc into {root / 'scratch'}/.  "
+                "NOTE: This C++ source does not exist in the SariChesko "
+                "repository yet — it has not been authored and verified "
+                "against a real ns-3 build."
+            ),
+            launcher=exe,
+            root=root,
+        )
+
+    return Ns3Status(
+        state="ready",
+        message=f"ns-3 ready at {root} with sarichesko-sim scenario.",
+        launcher=exe,
+        root=root,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -224,41 +314,79 @@ _ALGO_TO_NS3_QDISC = {
 }
 
 # Timeout for ns-3 subprocess execution (seconds).
-_NS3_SUBPROCESS_TIMEOUT = 120
+# 600 s is intentionally generous: the first invocation of a scratch program
+# triggers a full ns-3 build (CMake configure + compile), which can take
+# several minutes on modest hardware.  Subsequent runs reuse the cache and
+# complete in seconds.
+_NS3_SUBPROCESS_TIMEOUT = 600
 
 
-def _build_ns3_command(ns3_exe: str, config: SimConfig) -> list[str]:
+def _build_ns3_command(ns3_exe: str, config: SimConfig, out_path: str = "") -> list[str]:
     """Build the command line for running an ns-3 simulation.
 
-    This targets a hypothetical ns-3 scratch script 'sarichesko-sim' that
-    accepts command-line arguments matching our SimConfig fields and writes
-    FlowMonitor XML to stdout.
+    The ns-3 program is ``sarichesko-sim``, expected at
+    ``<ns3 root>/scratch/sarichesko-sim.cc``.  It is invoked as::
 
-    NOTE: This exact script does not ship with SariChesko — it would need to
-    be authored as an ns-3 C++ scratch program in the user's ns-3 installation.
+        <launcher> run "sarichesko-sim --scenario=.. --qdisc=.. ...
+                        --out=<absolute temp file>"
+
+    For legacy waf builds the invocation is::
+
+        waf --run "sarichesko-sim --scenario=.. ..."
+
+    The program writes FlowMonitor XML to the ``--out`` file.  The bridge
+    reads **that file** instead of parsing stdout (ns-3 build output pollutes
+    stdout) and always deletes the temp file.
+
+    NOTE: The ``sarichesko-sim`` program does NOT ship with SariChesko.
+    It must be authored as an ns-3 C++ scratch program and placed in the
+    user's ns-3 installation.  The command syntax here may be adjusted
+    after testing against a real ns-3 build.
     """
     qdisc = _ALGO_TO_NS3_QDISC.get(config.algorithm.value, "ns3::CoDelQueueDisc")
-    cmd = [
-        ns3_exe, "run", "sarichesko-sim", "--",
-        f"--scenario={config.scenario}",
-        f"--qdisc={qdisc}",
-        f"--duration={config.duration_s}",
-        f"--linkBw={config.link_bandwidth_mbps}Mbps",
-        f"--linkDelay={config.link_delay_ms}ms",
-        f"--queueSize={config.queue_size}",
-        f"--numFlows={config.num_flows}",
-    ]
+
+    # Build the program argument string (everything after the program name)
+    prog_args = (
+        f"sarichesko-sim"
+        f" --scenario={config.scenario}"
+        f" --qdisc={qdisc}"
+        f" --duration={config.duration_s}"
+        f" --linkBw={config.link_bandwidth_mbps}Mbps"
+        f" --linkDelay={config.link_delay_ms}ms"
+        f" --queueSize={config.queue_size}"
+        f" --numFlows={config.num_flows}"
+        f" --out={out_path}"
+    )
+
+    launcher_name = Path(ns3_exe).name.lower()
+    if launcher_name.startswith("waf"):
+        # Legacy waf: waf --run "program --args"
+        cmd = [ns3_exe, "--run", prog_args]
+    else:
+        # Modern ns3 launcher: ns3 run "program --args"
+        cmd = [ns3_exe, "run", prog_args]
     return cmd
+
+
+def _ns3_root_from_launcher(ns3_exe: str) -> Path:
+    """Derive the ns-3 root directory from the launcher path."""
+    return Path(ns3_exe).resolve().parent
 
 
 def _run_ns3_subprocess(ns3_exe: str, config: SimConfig) -> SimulationResult:
     """Execute ns-3 as a subprocess and parse its FlowMonitor XML output.
 
-    Follows the same subprocess conventions as the platform controllers:
-    capture_output=True, text=True, explicit timeout, structured error messages.
+    The program writes FlowMonitor XML to a temp file specified via ``--out``.
+    We read that file (not stdout, which ns-3 build noise pollutes) and
+    always delete the temp file afterwards.
     """
-    cmd = _build_ns3_command(ns3_exe, config)
-    logger.info("Running ns-3: %s", " ".join(cmd))
+    # Create a temp file for FlowMonitor XML output
+    fd, out_path = tempfile.mkstemp(suffix=".xml", prefix="sarichesko_ns3_")
+    os.close(fd)  # Close immediately; ns-3 will write to it
+
+    cmd = _build_ns3_command(ns3_exe, config, out_path)
+    cwd = str(_ns3_root_from_launcher(ns3_exe))
+    logger.info("Running ns-3: %s  (cwd=%s, out=%s)", " ".join(cmd), cwd, out_path)
 
     try:
         result = subprocess.run(
@@ -266,34 +394,49 @@ def _run_ns3_subprocess(ns3_exe: str, config: SimConfig) -> SimulationResult:
             capture_output=True,
             text=True,
             timeout=_NS3_SUBPROCESS_TIMEOUT,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired:
+        _cleanup_temp(out_path)
         raise RuntimeError(
             f"ns-3 subprocess timed out after {_NS3_SUBPROCESS_TIMEOUT}s. "
             f"Command: {' '.join(cmd)}"
         )
     except FileNotFoundError:
+        _cleanup_temp(out_path)
         raise RuntimeError(
             f"ns-3 executable not found at '{ns3_exe}'. "
             f"Check your NS3_HOME / NS3_DIR environment variable or PATH."
         )
     except OSError as e:
+        _cleanup_temp(out_path)
         raise RuntimeError(
             f"Failed to launch ns-3 subprocess: {e}. "
             f"Command: {' '.join(cmd)}"
         )
 
     if result.returncode != 0:
+        _cleanup_temp(out_path)
         stderr_snippet = (result.stderr or "").strip()[:500]
         raise RuntimeError(
             f"ns-3 exited with code {result.returncode}. "
             f"stderr: {stderr_snippet}"
         )
 
-    xml_output = result.stdout.strip()
+    # Read FlowMonitor XML from the output file (NOT from stdout)
+    try:
+        xml_output = Path(out_path).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        raise RuntimeError(
+            "ns-3 completed but did not write the expected output file. "
+            f"Expected: {out_path}"
+        )
+    finally:
+        _cleanup_temp(out_path)
+
     if not xml_output:
         raise RuntimeError(
-            "ns-3 produced no stdout output. Expected FlowMonitor XML. "
+            "ns-3 output file was empty. Expected FlowMonitor XML. "
             f"stderr: {(result.stderr or '').strip()[:300]}"
         )
 
@@ -302,8 +445,16 @@ def _run_ns3_subprocess(ns3_exe: str, config: SimConfig) -> SimulationResult:
     except ET.ParseError as e:
         raise RuntimeError(
             f"Failed to parse ns-3 FlowMonitor XML output: {e}. "
-            f"First 200 chars of stdout: {xml_output[:200]}"
+            f"First 200 chars: {xml_output[:200]}"
         )
+
+
+def _cleanup_temp(path: str) -> None:
+    """Silently remove a temp file."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------

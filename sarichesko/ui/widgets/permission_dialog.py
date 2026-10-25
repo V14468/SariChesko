@@ -2,14 +2,27 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushBu
 from PySide6.QtCore import Qt
 
 from ...core.recommendation_engine import Algorithm
+from ..theme import Palette, style
 
 
-ALGO_COLORS = {
-    Algorithm.LEAKY_BUCKET: "#00f0ff",
-    Algorithm.TOKEN_BUCKET: "#a78bfa",
-    Algorithm.RED: "#f59e0b",
-    Algorithm.CODEL: "#00e5a3",
-}
+def algo_colors(p: Palette) -> dict:
+    return {
+        Algorithm.LEAKY_BUCKET: p.accent,
+        Algorithm.TOKEN_BUCKET: p.purple,
+        Algorithm.RED: p.warning,
+        Algorithm.CODEL: p.success,
+    }
+
+
+def severity_colors(p: Palette) -> dict:
+    return {
+        "CRITICAL": p.danger,
+        "HIGH": p.danger,
+        "MEDIUM": p.warning,
+        "LOW": p.warning,
+        "NONE": p.success,
+    }
+
 
 # How each recommendation's `parameters` dict should be shown to a human,
 # in the order that reads most naturally for that algorithm.
@@ -42,12 +55,10 @@ class PermissionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Apply Recommended Fix?")
         self.setMinimumWidth(440)
-        self.setStyleSheet("""
-            QDialog { background-color: #0a0b10; }
-            QLabel { color: #e2e8f0; }
+        style(self, lambda p: f"""
+            QDialog {{ background-color: {p.surface_raised}; }}
+            QLabel {{ color: {p.text}; }}
         """)
-
-        color = ALGO_COLORS.get(algo, "#00f0ff")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 20)
@@ -55,12 +66,11 @@ class PermissionDialog(QDialog):
 
         # Header: severity + score
         header = QHBoxLayout()
-        sev_colors = {"CRITICAL": "#ef4444", "HIGH": "#ef4444", "MEDIUM": "#f59e0b", "LOW": "#f59e0b", "NONE": "#00e5a3"}
         dot = QLabel("\u25cf")
-        dot.setStyleSheet(f"font-size: 14px; color: {sev_colors.get(severity, '#f59e0b')};")
+        style(dot, lambda p: f"font-size: 14px; color: {severity_colors(p).get(severity, p.warning)};")
         header.addWidget(dot)
         header_lbl = QLabel(f"Congestion detected \u2014 severity {severity} (score {congestion_score:.0f}/100)")
-        header_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #e2e8f0;")
+        style(header_lbl, lambda p: f"font-size: 13px; font-weight: 700; color: {p.text};")
         header.addWidget(header_lbl)
         header.addStretch()
         layout.addLayout(header)
@@ -73,21 +83,21 @@ class PermissionDialog(QDialog):
         cl.setSpacing(8)
 
         rec_title = QLabel("RECOMMENDED APPROACH")
-        rec_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(rec_title, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         cl.addWidget(rec_title)
 
         algo_lbl = QLabel(algo.value)
-        algo_lbl.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {color};")
+        style(algo_lbl, lambda p: f"font-size: 22px; font-weight: 800; color: {algo_colors(p).get(algo, p.accent)};")
         cl.addWidget(algo_lbl)
 
         reason_lbl = QLabel(reason)
-        reason_lbl.setStyleSheet("font-size: 12px; color: #94a3b8;")
+        style(reason_lbl, lambda p: f"font-size: 12px; color: {p.text_secondary};")
         reason_lbl.setWordWrap(True)
         cl.addWidget(reason_lbl)
 
         if supported:
             params_lbl = QLabel(self._format_params(algo, parameters))
-            params_lbl.setStyleSheet("font-size: 11px; color: #64748b;")
+            style(params_lbl, lambda p: f"font-size: 11px; color: {p.text_muted};")
             params_lbl.setWordWrap(True)
             cl.addWidget(params_lbl)
 
@@ -102,11 +112,11 @@ class PermissionDialog(QDialog):
             wl.setContentsMargins(16, 12, 16, 12)
             wl.setSpacing(4)
             warn_title = QLabel("\u26a0 Not available on this operating system")
-            warn_title.setStyleSheet("font-size: 12px; font-weight: 700; color: #f59e0b;")
+            style(warn_title, lambda p: f"font-size: 12px; font-weight: 700; color: {p.warning};")
             wl.addWidget(warn_title)
             warn_body = QLabel(unsupported_message or
                                 f"{algo.value} cannot be applied for real on this OS.")
-            warn_body.setStyleSheet("font-size: 11px; color: #94a3b8;")
+            style(warn_body, lambda p: f"font-size: 11px; color: {p.text_secondary};")
             warn_body.setWordWrap(True)
             wl.addWidget(warn_body)
             layout.addWidget(warn)
@@ -116,12 +126,12 @@ class PermissionDialog(QDialog):
                 "Administrator/root privileges. If SariChesko isn't running with those "
                 "privileges, this step will fail with a clear message and nothing will change."
             )
-            note.setStyleSheet("font-size: 10px; color: #475569; font-style: italic;")
+            style(note, lambda p: f"font-size: 10px; color: {p.text_faint}; font-style: italic;")
             note.setWordWrap(True)
             layout.addWidget(note)
 
         iface_lbl = QLabel(f"Target interface: {iface}")
-        iface_lbl.setStyleSheet("font-size: 11px; color: #64748b;")
+        style(iface_lbl, lambda p: f"font-size: 11px; color: {p.text_muted};")
         layout.addWidget(iface_lbl)
 
         # Buttons
@@ -161,4 +171,4 @@ class PermissionDialog(QDialog):
                     parts.append(f"{label}: {fmt(parameters[key])}")
                 except Exception:
                     parts.append(f"{label}: {parameters[key]}")
-        return "  \u00b7  ".join(parts)
+        return "  ·  ".join(parts) if parts else "Default parameters"

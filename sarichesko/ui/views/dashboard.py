@@ -1,3 +1,4 @@
+from typing import Callable
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame,
     QGraphicsOpacityEffect, QGridLayout, QScrollArea,
@@ -7,9 +8,16 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve
 from ..widgets.congestion_gauge import CongestionGaugeWidget
 from ...storage.db import get_connection, init_db
 from ...storage.repository import Repository
+from ..theme import theme_manager, Palette, style
 
 
-def _stat_card(title: str, value: str, unit: str, color: str, footnote: str) -> tuple[QFrame, QLabel, QLabel]:
+def _stat_card(
+    title: str,
+    value: str,
+    unit: str,
+    color_fn: Callable[[Palette], str],
+    footnote: str,
+) -> tuple[QFrame, QLabel, QLabel]:
     card = QFrame()
     card.setObjectName("card")
     card.setMinimumHeight(105)
@@ -18,23 +26,23 @@ def _stat_card(title: str, value: str, unit: str, color: str, footnote: str) -> 
     cl.setSpacing(6)
 
     lbl_t = QLabel(title)
-    lbl_t.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+    style(lbl_t, lambda p: f"font-size: 10px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
 
     val_row = QHBoxLayout()
     val_row.setSpacing(4)
     val_row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBaseline)
 
     lbl_v = QLabel(value)
-    lbl_v.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {color};")
+    style(lbl_v, lambda p: f"font-size: 26px; font-weight: 800; color: {color_fn(p)};")
 
     lbl_u = QLabel(unit)
-    lbl_u.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {color}; padding-top: 8px;")
+    style(lbl_u, lambda p: f"font-size: 12px; font-weight: 600; color: {color_fn(p)}; padding-top: 8px;")
 
     val_row.addWidget(lbl_v)
     val_row.addWidget(lbl_u)
 
     lbl_f = QLabel(footnote)
-    lbl_f.setStyleSheet("font-size: 11px; color: #475569;")
+    style(lbl_f, lambda p: f"font-size: 11px; color: {p.text_faint};")
 
     cl.addWidget(lbl_t)
     cl.addLayout(val_row)
@@ -42,19 +50,23 @@ def _stat_card(title: str, value: str, unit: str, color: str, footnote: str) -> 
     return card, lbl_v, lbl_f
 
 
-def _status_row(label: str, status: str, color: str) -> tuple[QHBoxLayout, QLabel]:
+def _status_row(
+    label: str,
+    status: str,
+    color_fn: Callable[[Palette], str],
+) -> tuple[QHBoxLayout, QLabel]:
     row = QHBoxLayout()
     row.setSpacing(10)
 
     dot = QLabel("●")
-    dot.setStyleSheet(f"font-size: 10px; color: {color};")
+    style(dot, lambda p: f"font-size: 10px; color: {color_fn(p)};")
     dot.setFixedWidth(14)
 
     lbl = QLabel(label)
-    lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #e2e8f0;")
+    style(lbl, lambda p: f"font-size: 13px; font-weight: 600; color: {p.text};")
 
     val = QLabel(status)
-    val.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {color};")
+    style(val, lambda p: f"font-size: 13px; font-weight: 600; color: {color_fn(p)};")
     val.setAlignment(Qt.AlignmentFlag.AlignRight)
 
     row.addWidget(dot)
@@ -67,11 +79,12 @@ def _status_row(label: str, status: str, color: str) -> tuple[QHBoxLayout, QLabe
 class DashboardView(QWidget):
     def __init__(self):
         super().__init__()
+        self._last_diagnostic = None
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #000000; border: none; }")
+        style(scroll, lambda p: f"QScrollArea {{ background: {p.bg}; border: none; }}")
 
         content = QWidget()
         layout = QVBoxLayout(content)
@@ -83,9 +96,9 @@ class DashboardView(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(2)
         title = QLabel("Dashboard")
-        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff;")
+        style(title, lambda p: f"font-size: 26px; font-weight: 800; color: {p.text_strong};")
         subtitle = QLabel("Real-time network health overview")
-        subtitle.setStyleSheet("font-size: 13px; color: #64748b;")
+        style(subtitle, lambda p: f"font-size: 13px; color: {p.text_muted};")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
         header.addLayout(title_col)
@@ -107,14 +120,14 @@ class DashboardView(QWidget):
         self._metric_footnotes = {}
 
         card_info = [
-            ("LATENCY", "—", "ms", "#00f0ff", "No data yet"),
-            ("PACKET LOSS", "—", "%", "#ef4444", "No data yet"),
-            ("BANDWIDTH", "—", "Mbps", "#a78bfa", "No data yet"),
-            ("JITTER", "—", "ms", "#f59e0b", "No data yet"),
+            ("LATENCY", "—", "ms", lambda p: p.accent, "No data yet"),
+            ("PACKET LOSS", "—", "%", lambda p: p.danger, "No data yet"),
+            ("BANDWIDTH", "—", "Mbps", lambda p: p.purple, "No data yet"),
+            ("JITTER", "—", "ms", lambda p: p.warning, "No data yet"),
         ]
         keys = ["latency", "packet_loss", "bandwidth", "jitter"]
-        for i, (t, v, u, c, f) in enumerate(card_info):
-            card, val_label, foot_label = _stat_card(t, v, u, c, f)
+        for i, (t, v, u, c_fn, f) in enumerate(card_info):
+            card, val_label, foot_label = _stat_card(t, v, u, c_fn, f)
             cards_grid.addWidget(card, 0, i)
             self._metric_values[keys[i]] = val_label
             self._metric_footnotes[keys[i]] = foot_label
@@ -133,19 +146,19 @@ class DashboardView(QWidget):
         sl.setSpacing(12)
 
         st_title = QLabel("SYSTEM STATUS")
-        st_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(st_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         sl.addWidget(st_title)
 
         self._status_values = {}
         statuses = [
-            ("Monitor Engine", "Idle", "#64748b"),
-            ("ISP Probe", "Ready", "#00e5a3"),
-            ("Congestion Scorer", "Idle", "#64748b"),
-            ("Traffic Controller", "Inactive", "#64748b"),
-            ("Database", "Connected", "#00e5a3"),
+            ("Monitor Engine", "Idle", lambda p: p.text_muted),
+            ("ISP Probe", "Ready", lambda p: p.success),
+            ("Congestion Scorer", "Idle", lambda p: p.text_muted),
+            ("Traffic Controller", "Inactive", lambda p: p.text_muted),
+            ("Database", "Connected", lambda p: p.success),
         ]
-        for lbl, val, col in statuses:
-            row, val_lbl = _status_row(lbl, val, col)
+        for lbl, val, col_fn in statuses:
+            row, val_lbl = _status_row(lbl, val, col_fn)
             sl.addLayout(row)
             self._status_values[lbl] = val_lbl
 
@@ -158,7 +171,7 @@ class DashboardView(QWidget):
         gl.setContentsMargins(20, 16, 20, 16)
 
         g_title = QLabel("CONGESTION SCORE")
-        g_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(g_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         gl.addWidget(g_title)
 
         self._gauge = CongestionGaugeWidget()
@@ -166,7 +179,7 @@ class DashboardView(QWidget):
         gl.addWidget(self._gauge, 0, Qt.AlignmentFlag.AlignCenter)
 
         self._score_hint = QLabel("Run a diagnostic to generate a score")
-        self._score_hint.setStyleSheet("font-size: 11px; color: #334155;")
+        style(self._score_hint, lambda p: f"font-size: 11px; color: {p.text_fainter};")
         self._score_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         gl.addWidget(self._score_hint)
 
@@ -185,20 +198,24 @@ class DashboardView(QWidget):
         il.setSpacing(10)
 
         isp_title = QLabel("ISP HEALTH")
-        isp_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(isp_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         il.addWidget(isp_title)
 
         self._isp_verdict_label = QLabel("Not tested")
-        self._isp_verdict_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #475569;")
+        style(self._isp_verdict_label, lambda p: (
+            f"font-size: 18px; font-weight: 700; color: {p.text_faint};"
+            if not self._last_diagnostic else
+            f"font-size: 18px; font-weight: 700; color: {self._get_isp_color(p)};"
+        ))
         il.addWidget(self._isp_verdict_label)
 
         self._isp_detail_label = QLabel("Run a diagnostic to check ISP health")
-        self._isp_detail_label.setStyleSheet("font-size: 12px; color: #475569;")
+        style(self._isp_detail_label, lambda p: f"font-size: 12px; color: {p.text_faint};")
         self._isp_detail_label.setWordWrap(True)
         il.addWidget(self._isp_detail_label)
 
         self._isp_stats = QLabel("")
-        self._isp_stats.setStyleSheet("font-size: 11px; color: #64748b;")
+        style(self._isp_stats, lambda p: f"font-size: 11px; color: {p.text_muted};")
         il.addWidget(self._isp_stats)
         il.addStretch()
 
@@ -212,20 +229,24 @@ class DashboardView(QWidget):
         rl.setSpacing(8)
 
         rec_title = QLabel("RECOMMENDATION")
-        rec_title.setStyleSheet("font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.8px;")
+        style(rec_title, lambda p: f"font-size: 11px; font-weight: 700; color: {p.text_muted}; letter-spacing: 0.8px;")
         rl.addWidget(rec_title)
 
         self._algo_label = QLabel("Awaiting Diagnostic")
-        self._algo_label.setStyleSheet("font-size: 20px; font-weight: 700; color: #334155;")
+        style(self._algo_label, lambda p: (
+            f"font-size: 20px; font-weight: 700; color: {p.text_fainter};"
+            if not self._last_diagnostic else
+            f"font-size: 20px; font-weight: 700; color: {self._get_algo_color(p)};"
+        ))
         rl.addWidget(self._algo_label)
 
         self._reason_label = QLabel("Run a diagnostic to receive an algorithm recommendation")
-        self._reason_label.setStyleSheet("font-size: 12px; color: #475569;")
+        style(self._reason_label, lambda p: f"font-size: 12px; color: {p.text_faint};")
         self._reason_label.setWordWrap(True)
         rl.addWidget(self._reason_label)
 
         self._algos_avail = QLabel("Available: Leaky Bucket · Token Bucket · RED · CoDel")
-        self._algos_avail.setStyleSheet("font-size: 10px; color: #334155; letter-spacing: 0.3px;")
+        style(self._algos_avail, lambda p: f"font-size: 10px; color: {p.text_fainter}; letter-spacing: 0.3px;")
         rl.addWidget(self._algos_avail)
         rl.addStretch()
 
@@ -249,8 +270,36 @@ class DashboardView(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
-        # Load latest results from DB
+        theme_manager.changed.connect(lambda _: self._load_latest())
         self._load_latest()
+
+    def _get_isp_color(self, p: Palette) -> str:
+        if not self._last_diagnostic:
+            return p.text_faint
+        isp_verdict = self._last_diagnostic.get("isp_verdict") or "unknown"
+        display_map = {
+            "healthy": p.success,
+            "local_congestion": p.warning,
+            "last_mile": p.danger,
+            "isp_degradation": p.warning,
+            "isp_outage": p.danger,
+            "dns_issue": p.danger,
+        }
+        return display_map.get(isp_verdict, p.text_muted)
+
+    def _get_algo_color(self, p: Palette) -> str:
+        if not self._last_diagnostic:
+            return p.text_fainter
+        algo = self._last_diagnostic.get("recommended_algo")
+        if not algo:
+            return p.success
+        algo_map = {
+            "Leaky Bucket": p.accent,
+            "Token Bucket": p.purple,
+            "RED": p.warning,
+            "CoDel": p.success,
+        }
+        return algo_map.get(algo, p.accent)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -264,10 +313,12 @@ class DashboardView(QWidget):
 
             runs = repo.get_diagnostic_runs(limit=1)
             if not runs:
+                self._last_diagnostic = None
                 conn.close()
                 return
 
             r = runs[0]
+            self._last_diagnostic = r
 
             # Get measurements for this session
             measurements = repo.get_recent_measurements(r["session_id"], limit=20)
@@ -307,16 +358,18 @@ class DashboardView(QWidget):
             self._score_hint.setText(f"Severity: {severity}  •  Dominant: {dominant}")
 
             # ISP verdict
+            p = theme_manager.palette
             isp_verdict = r["isp_verdict"] or "unknown"
-            verdict_display = {
-                "healthy": ("Healthy", "#00e5a3"),
-                "local_congestion": ("Local Congestion", "#f59e0b"),
-                "last_mile": ("Last Mile Issue", "#ef4444"),
-                "isp_degradation": ("ISP Degradation", "#f59e0b"),
-                "isp_outage": ("ISP Outage", "#ef4444"),
-                "dns_issue": ("DNS Issue", "#ef4444"),
+            display_names = {
+                "healthy": "Healthy",
+                "local_congestion": "Local Congestion",
+                "last_mile": "Last Mile Issue",
+                "isp_degradation": "ISP Degradation",
+                "isp_outage": "ISP Outage",
+                "dns_issue": "DNS Issue",
             }
-            display_text, color = verdict_display.get(isp_verdict, ("Unknown", "#64748b"))
+            display_text = display_names.get(isp_verdict, "Unknown")
+            color = self._get_isp_color(p)
             self._isp_verdict_label.setText(display_text)
             self._isp_verdict_label.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {color};")
             self._isp_detail_label.setText("Based on last diagnostic run")
@@ -324,22 +377,14 @@ class DashboardView(QWidget):
             # Recommendation
             algo = r["recommended_algo"]
             reason = r["recommendation_reason"] or ""
-            confidence = r["confidence"] or ""
-
-            algo_colors = {
-                "Leaky Bucket": "#00f0ff",
-                "Token Bucket": "#a78bfa",
-                "RED": "#f59e0b",
-                "CoDel": "#00e5a3",
-            }
 
             if algo:
-                a_color = algo_colors.get(algo, "#00f0ff")
+                a_color = self._get_algo_color(p)
                 self._algo_label.setText(algo)
                 self._algo_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {a_color};")
             else:
                 self._algo_label.setText("No Algorithm Needed")
-                self._algo_label.setStyleSheet("font-size: 20px; font-weight: 700; color: #00e5a3;")
+                self._algo_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {p.success};")
 
             self._reason_label.setText(reason)
 

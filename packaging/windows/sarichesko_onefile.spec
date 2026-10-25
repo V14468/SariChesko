@@ -65,6 +65,7 @@ a = Analysis(
         'sarichesko.ui.widgets',
         'sarichesko.ui.widgets.algo_comparison_chart',
         'sarichesko.ui.widgets.congestion_gauge',
+        'sarichesko.ui.widgets.engine_selector',
         'sarichesko.ui.widgets.isp_status_panel',
         'sarichesko.ui.widgets.latency_chart',
         'sarichesko.ui.widgets.permission_dialog',

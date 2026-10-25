@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QGraph
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 
 
+from sarichesko.ui.theme import style
+
 class SplashScreen(QWidget):
     def __init__(self):
         super().__init__()
@@ -13,12 +15,12 @@ class SplashScreen(QWidget):
         # Container with dark border & blur feel
         container = QWidget(self)
         container.setGeometry(0, 0, 520, 320)
-        container.setStyleSheet("""
-            QWidget {
-                background-color: #050509;
-                border: 1px solid #1e2030;
+        style(container, lambda p: f"""
+            QWidget {{
+                background-color: {p.splash_bg};
+                border: 1px solid {p.splash_border};
                 border-radius: 16px;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(container)
@@ -27,10 +29,10 @@ class SplashScreen(QWidget):
         # Logo & App Title
         title = QLabel("SariChesko")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("""
+        style(title, lambda p: f"""
             font-size: 38px;
             font-weight: 800;
-            color: #00f0ff;
+            color: {p.accent};
             letter-spacing: 2px;
             border: none;
         """)
@@ -39,10 +41,10 @@ class SplashScreen(QWidget):
         # Telugu meaning + Tagline
         tagline = QLabel("Telugu: \"Sort it out\"\nAdaptive Congestion Management & ISP Diagnostics")
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tagline.setStyleSheet("""
+        style(tagline, lambda p: f"""
             font-size: 13px;
             font-weight: 500;
-            color: #94a3b8;
+            color: {p.text_secondary};
             line-height: 1.4;
             border: none;
         """)
@@ -53,9 +55,9 @@ class SplashScreen(QWidget):
         # Status text during splash load
         self.status_label = QLabel("Initializing Platform Abstraction Layer...")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("""
+        style(self.status_label, lambda p: f"""
             font-size: 11px;
-            color: #64748b;
+            color: {p.text_muted};
             border: none;
         """)
         layout.addWidget(self.status_label)
@@ -64,16 +66,16 @@ class SplashScreen(QWidget):
         self.progress = QProgressBar()
         self.progress.setFixedHeight(4)
         self.progress.setTextVisible(False)
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                background-color: #121420;
+        style(self.progress, lambda p: f"""
+            QProgressBar {{
+                background-color: {p.track};
                 border: none;
                 border-radius: 2px;
-            }
-            QProgressBar::chunk {
-                background-color: #00f0ff;
+            }}
+            QProgressBar::chunk {{
+                background-color: {p.accent};
                 border-radius: 2px;
-            }
+            }}
         """)
         layout.addWidget(self.progress)
 
